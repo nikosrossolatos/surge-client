@@ -7,7 +7,7 @@ var defs = {
 	enviroment	: 'production'
 }
 
-function Surge(options){
+function Surge(url){
 
 	var events = {};
 	var channels = {};
@@ -19,7 +19,8 @@ function Surge(options){
 
 	var connection = new Connection();
 
-	socket = connect();
+	//TODO: check if url is ip or not
+	socket = connect(url);
 
 	_surgeEvents();
 
@@ -59,9 +60,8 @@ function Surge(options){
 		buffer = [];
 	};
 
-	function connect(options){
-		var o = options || {};
-		var ip = o.ip || defs.server;
+	function connect(url){
+		var ip = url || defs.server;
 
 		if(socket) {
         // Get auto-reconnect and re-setup
