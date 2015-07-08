@@ -2,6 +2,10 @@
 
 Surge is a "framework" for SockJS, providing an API on top of SockJS. If you come from socket.io like i did, you will find it easier to adjust with SockJS using Surge.
 
+##Inspiration
+
+I wanted to build a reliable WebSocket server that i could deploy very fast and have everything i needed in matter of minutes. Having a standalone surge server, i can require the library include my socket-server ip and im good to go. Using the excellent [pusher](https://pusher.com/) library was also a reason.
+
 ##How to use
 
 Surge-client connects automatically with a standalone [surge](https://github.com/spideynr/surge) server. Alternatively, you can clone your own surge server and change the ip that surge-client connects to.
