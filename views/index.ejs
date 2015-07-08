@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name = "viewport"  content="minimal-ui width=device-width, user-scalable=no, initial-scale=1.0,maximum-scale=1.0">
+    <meta name = "msapplication-tap-highlight" content="no">
+    <title>Surge | Client</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+    <link rel="stylesheet" type="text/css" href="/css/main.css">
+  </head>
+  <body>
+    <h1>Hola bitches</h1>
+    <button id="test">Emit to socket</button>
+
+    <button id="test2">Join room</button>
+
+    <button id="test3">Get rooms</button>
+    <form id="joinRoomForm">
+      <input type="text">
+      <button type="submit">join room</button>
+    </form>
+
+    <form id="leaveRoomForm">
+      <input type="text">
+      <button type="submit">leave room</button>
+    </form>
+
+    <form id="emitChannel">
+      <input type="text" id="i2" placeholder="event channel">
+      <input type="text" id="i1" placeholder="event name">
+      <input type="text" id="i3" placeholder="event text">
+      <button type="submit">emit to room</button>
+    </form>
+
+    <h3>Room im in : <span id="rooms"></span></h3>
+    <h3>Socket state is : <span id="state"></span></h3>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script src="/dist/js/surge-client.min.js"></script>
+    <script src="/js/main.js"></script>
+  </body>
+</html>
