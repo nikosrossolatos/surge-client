@@ -76,8 +76,9 @@ Returns the original SockJS socket handler. *Warning*:  You will be able to over
 > Well okay, why would i use this instead of building my own?
 
 - Well, for starters, its blazing fast to set something up for development purposes
-- Auto-reconnecting already enabled
+- Auto-reconnecting already enabled (Also reconnects to previous connected rooms) 
 - Smaller learning curve if you come from socket.io and you want to use some of its features heads on with the SockJS API
+- If socket gets disconnected all further emits will go to a buffer. Upon reconnection the events will fire with the same series that they were called 
 - I will be maintaining this library since i will be using it on production
 - Open source! Want to change something? Fork it change it , do a pull request or don't and keep it for yourself
 - Check roadmap for more!
