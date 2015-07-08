@@ -42,7 +42,7 @@ There is a plan for the future to create similar libraries for Python,PHP and Ru
 
 ##API
 
-When you call new Surge() you will get back a tiny API to interact with the socket. Calling multiple new Surge() object will not likely work since SockJS has a limitation as to how many WebSockets it can use.
+When you call *new Surge()* you will get back a tiny API to interact with the socket. Calling multiple new Surge() object will not likely work since SockJS has a limitation as to how many WebSockets it can use.
 
 ### `.on('event',callback)`
 Creates an event handler for this event. Callback returns data received from the socket.
@@ -70,7 +70,18 @@ Returns all rooms the socket currently exists in.
 Returns true : false.
 
 ### `.socket`
-Returns the original SockJS socket handler. Warning:  You will be able to override the socket.onmessage, socket.onopen and socket.onclose.
+Returns the original SockJS socket handler. *Warning*:  You will be able to override the socket.onmessage, socket.onopen and socket.onclose.
+
+##Features
+> Well okay, why would i use this instead of building my own?
+
+- Well, for starters, its blazing fast to set something up for development purposes
+- Auto-reconnecting already enabled
+- Smaller learning curve if you come from socket.io and you want to use some of its features heads on with the SockJS API
+- I will be maintaining this library since i will be using it on production
+- Open source! Want to change something? Fork it change it , do a pull request or don't and keep it for yourself
+- Check roadmap for more!
+
 
 ##Build
 For development purposes you can install [browserify](http://browserify.org/#install), [watchify](https://github.com/substack/watchify) and [uglify](https://github.com/mishoo/UglifyJS2) and use the npm task manager to build the dependancies.
