@@ -5694,19 +5694,19 @@ function Surge(url){
 			}
 		};
 		socket.onclose = function() {
+			socket = null;
 			if(rconnect){
 				connection.state='attempting reconnection';
 				reconnecting = true;
+				recInterval = setInterval(function() {
+					socket = connect();
+					clearInterval(recInterval);
+					_surgeEvents();
+				}, 2000);
 			}
 			else{
 				connection.state = 'disconnected';
 			}
-			socket = null;
-			recInterval = setInterval(function() {
-				socket = connect();
-				clearInterval(recInterval);
-				_surgeEvents();
-			}, 2000);
 		};
 		socket.onmessage = function (e) {
 			if(!e.data){
