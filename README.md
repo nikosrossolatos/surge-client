@@ -1,6 +1,6 @@
 #Surge-client
 
-Surge is a "framework" for SockJS, providing an API on top of SockJS. If you come from socket.io like i did, you will find it easier to adjust with SockJS using Surge.
+Surge is a lightweight "framework" for SockJS, providing an API on top of it adding extra features. If you come from socket.io like i did, you will find it easier to adjust with SockJS using Surge.
 
 ##Inspiration
 
@@ -38,12 +38,12 @@ Add the surge-client source to your server directory and use it like below.
 
 ```
 
-There is a plan for the future to create similar libraries for python,php and ruby servers. But if you want to built it yourself, do a pull request and we will happily intergrate it!
+There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do a pull request and i will happily intergrate it!
 
 ##Build
-For development purposes you can install [browserify](http://browserify.org/#install) [watchify](https://github.com/substack/watchify) and [uglify](https://github.com/mishoo/UglifyJS2) and use the npm task manager to build the dependancies.
+For development purposes you can install [browserify](http://browserify.org/#install), [watchify](https://github.com/substack/watchify) and [uglify](https://github.com/mishoo/UglifyJS2) and use the npm task manager to build the dependancies.
 
-To watch everything for production purposes you can run :
+To build-watch everything for production purposes you can run :
 > npm run watch  
 
 You can also build the surge-client library and minify it using
