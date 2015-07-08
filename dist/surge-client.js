@@ -5556,7 +5556,7 @@ module.exports = function required(port, protocol) {
 var SockJS = require('sockjs-client');
 
 var defs = {
-	server  		: 'http://83.212.101.253:808',
+	server  		: 'http://83.212.101.253:8080',
 	enviroment	: 'production'
 }
 
