@@ -40,6 +40,16 @@ Add the surge-client source to your server directory and use it like below.
 
 There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do a pull request and i will happily intergrate it!
 
+##API
+
+When you call new Surge() you will get back a tiny API to interact with the socket. Calling multiple new Surge() object will not likely work since SockJS has a limitation as to how many WebSockets it can use.
+
+### `.on`
+
+### `.tags()`
+### `.tags()`
+### `.tags()`
+### `.tags()`
 ##Build
 For development purposes you can install [browserify](http://browserify.org/#install), [watchify](https://github.com/substack/watchify) and [uglify](https://github.com/mishoo/UglifyJS2) and use the npm task manager to build the dependancies.
 
