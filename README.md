@@ -1,6 +1,6 @@
 #Surge-client
 
-Surge is a lightweight "framework" for SockJS, providing an API on top of it adding extra features. If you come from socket.io like i did, you will find it easier to adjust with SockJS using Surge.
+Surge is a lightweight "framework" for SockJS, providing an API on top of it, adding extra features. If you come from socket.io like i did, you will find it easier to adjust with SockJS using Surge.
 
 ##Inspiration
 
