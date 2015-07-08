@@ -5,7 +5,7 @@ var SockJS = require('sockjs-client');
 require('../polyfills/watch.js');
 
 var defs = {
-	server  		: 'http://192.168.0.6:8080',
+	server  		: 'http://83.212.100.253:8080',
 	enviroment	: 'production'
 }
 
