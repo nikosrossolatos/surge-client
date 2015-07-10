@@ -139,6 +139,9 @@ function Surge(url){
 				reconnecting = false;
 				reconnect();
 			}
+			else{
+				flushBuffer();
+			}
 		};
 		socket.onclose = function() {
 			socket = null;
@@ -183,13 +186,16 @@ function Surge(url){
 				subscribe(connection.rooms[i]);
 			};
 			//send all events that were buffered
-			if(buffer.length>0){
-				for (var i = 0; i < buffer.length; i++) {
-					console.log('sending message from buffer : '+buffer[i]);
-					socket.send(buffer[i]);
-				};
-				buffer = [];
-			}
+			flushBuffer();
+		}
+	}
+	function flushBuffer(){
+		if(buffer.length>0){
+			for (var i = 0; i < buffer.length; i++) {
+				console.log('sending message from buffer : '+buffer[i]);
+				socket.send(buffer[i]);
+			};
+			buffer = [];
 		}
 	}
 	function Channel(room){
