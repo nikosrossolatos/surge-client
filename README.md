@@ -48,7 +48,11 @@ Add the surge-client source to your server directory and use it like below.
 There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do a pull request and i will happily intergrate it!
 
 ##Options 
-coming soon
+Option             | Description
+-------------------|--------------------------------------------------------------------------------------------------
+`host`             | Sets a new surge-server host
+`debug`            | When set to `true`, you will see more details about what is happening on your console. Default is `false`
+`authEndpoint`     | (Not enabled yet) Url that server will call for authorization
 
 ##API
 
@@ -82,6 +86,14 @@ Returns true : false.
 
 ### `.socket`
 Returns the original SockJS socket handler. *Warning*:  You will be able to override the socket.onmessage, socket.onopen and socket.onclose.
+
+## Events 
+Event Name            | Description
+----------------------|-----------------------------------------------------------------------------------------------
+`open`                | Gets called when the socket is connected. (Will include socket.id soon)
+`close`               | Gets called when the socket is closed.
+`surge-joined-room`   | Calls when you succesfully enter a room, returns the `room` as string.
+`surge-left-room`     | Calls when you succesfully leave a room, returns the `room` as string.
 
 ##Features
 > Well okay, why would i use this instead of building my own?
