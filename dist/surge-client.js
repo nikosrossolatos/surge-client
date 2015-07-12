@@ -5557,10 +5557,10 @@ var SockJS = require('sockjs-client');
 
 var defs = {
 	server  		: 'http://83.212.100.253:8080',
-	enviroment	: 'production'
+	debug  			: false 
 }
 
-function Surge(url){
+function Surge(options){
 
 	var events = {};
 	var channels = {};
@@ -5569,11 +5569,17 @@ function Surge(url){
 	var recInterval = null;
 	var reconnecting = false;
 	var buffer = [];
+	
+	var o = options || {};
+
+	var url = o.host || defs.server;
+	var debug = o.debug || defs.debug;
+	var authEndpoint = o.authEndpoint;
 
 	var connection = new Connection();
 
 	//TODO: check if url is ip or not
-	socket = connect(url);
+	socket = _connect();
 
 	_surgeEvents();
 
@@ -5609,23 +5615,15 @@ function Surge(url){
 		emit('surge-unsubscribe',{room:room});
 	};
 	function disconnect(){
+		rconnect = false;
 		socket.close();
 		buffer = [];
 	};
 
-	function connect(url){
-		var ip = url || defs.server;
-
-		if(socket) {
-        // Get auto-reconnect and re-setup
-        connection.state = 'connecting';
-        var p = rconnect;
-        disconnect();
-        rconnect = p;
-    }
-		connection.state='connecting';
-		return new SockJS(ip);
-	};
+	function connect(){
+    socket = _connect();
+    _surgeEvents();
+	}
 
 	function emit(channel,name,data){
 		var data = {};
@@ -5639,16 +5637,35 @@ function Surge(url){
 		data.message = arguments[arguments.length-1];
 		data.channel = arguments.length === 3 ? arguments[0] : undefined;
 
-		if(defs.enviroment=='production'){
-			console.log('Surge : Event sent : ' + JSON.stringify(data));
-		}
+		
 		if(socket){
+			if(debug===true){
+				console.log('Surge : Event sent : ' + JSON.stringify(data));
+			}
 			socket.emit(data);
 		}
 		else{
+			if(debug===true){
+				console.log('Surge : Event buffered : ' + JSON.stringify(data));
+			}
 			buffer.push(JSON.stringify(data));
 		}
 	};
+
+	function _connect(){
+		console.log('trying to connect to : '+url);
+
+		if(socket) {
+        // Get auto-reconnect and re-setup
+        connection.state = 'connecting';
+        var p = rconnect;
+        disconnect();
+        rconnect = p;
+    }
+		connection.state='connecting';
+		return new SockJS(url);
+	};
+	
 	function _catchEvent(response) {
 		var name = response.name,
 		data = response.data;
@@ -5686,6 +5703,7 @@ function Surge(url){
 			}
 		});
 		socket.onopen = function() {
+			console.log('opened connection');
 			connection.state = 'connected';
 			//In case of reconnection, resubscribe to rooms
 			if(reconnecting){
@@ -5698,6 +5716,7 @@ function Surge(url){
 		};
 		socket.onclose = function() {
 			socket = null;
+			_catchEvent({name:'close',data:{}});
 			if(rconnect){
 				connection.state='attempting reconnection';
 				reconnecting = true;
@@ -5717,7 +5736,7 @@ function Surge(url){
 				return;
 			}
 			var data = JSON.parse(e.data);
-			if(defs.enviroment=='production'){
+			if(debug===true){
 				console.log('Surge : Event received : ' + e.data);
 			}
 			_catchEvent(data);
