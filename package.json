@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "watch": "watchify surge-client.js --s Surge -o ./dist/surge-client.js",
-    "build" : "browserify surge-client.js --s Surge | uglifyjs -mc > ./dist/surge-client.min.js"
+    "build" : "browserify surge-client.js --s Surge -o ./dist/surge-client.js && browserify surge-client.js --s Surge | uglifyjs -mc > ./dist/surge-client.min.js"
   },
   "dependencies": {
     "sockjs-client": "^1.0.0"

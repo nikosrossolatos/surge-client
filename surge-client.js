@@ -148,12 +148,12 @@ function Surge(options){
 				channels[room].on = null;
 			}
 		});
+		on('open',function(data){
+			console.log('Socket id is : '+data);
+			socket.id = data;
+		})
 		socket.onopen = function() {
 			connection.state = 'connected';
-			_catchEvent({
-				name:'open',
-				data:{}
-			});
 			//In case of reconnection, resubscribe to rooms
 			if(reconnecting){
 				reconnecting = false;
