@@ -100,8 +100,6 @@ function Surge(options){
 	};
 
 	function _connect(){
-		console.log('trying to connect to : '+url);
-
 		if(socket) {
         // Get auto-reconnect and re-setup
         connection.state = 'connecting';
@@ -112,7 +110,7 @@ function Surge(options){
 		connection.state='connecting';
 		return new SockJS(url);
 	};
-	
+
 	function _catchEvent(response) {
 		var name = response.name,
 		data = response.data;
@@ -133,6 +131,7 @@ function Surge(options){
 	//Private functions
 	function _surgeEvents(){
     on('surge-joined-room',function(room){
+    	alert("running");
 	  	if(!connection.inRoom(room)){
 	  		connection.rooms.push(room);
 	  		channels[room].state = 'connected';
@@ -150,8 +149,11 @@ function Surge(options){
 			}
 		});
 		socket.onopen = function() {
-			console.log('opened connection');
 			connection.state = 'connected';
+			_catchEvent({
+				name:'open',
+				data:{}
+			});
 			//In case of reconnection, resubscribe to rooms
 			if(reconnecting){
 				reconnecting = false;
