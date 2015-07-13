@@ -5702,7 +5702,8 @@ function Surge(options){
 		});
 		on('open',function(data){
 			connection.socket_id = data;
-		})
+		});
+
 		socket.onopen = function() {
 			connection.state = 'connected';
 			//In case of reconnection, resubscribe to rooms
@@ -5723,7 +5724,6 @@ function Surge(options){
 				recInterval = setInterval(function() {
 					socket = connect();
 					clearInterval(recInterval);
-					_surgeEvents();
 				}, 2000);
 			}
 			else{
