@@ -1,6 +1,9 @@
 (function(){
   
-  window.surge = Surge();
+  window.surge = Surge({
+    debug:true,
+    host:'http://83.212.100.253:8080'
+  });
 
 	$(document).on('click', '#test', function(event) {
 		event.preventDefault();
@@ -47,7 +50,9 @@
   	$('#state').html(newval);
     return newval;
   });
-
+  surge.on('test',function(data){
+    alert("data");
+  })
 	surge.on('surge-joined-room', function() {
 		$('#rooms').html('');
 		for (var i = 0; i < surge.connection.rooms.length; i++) {
