@@ -148,8 +148,7 @@ function Surge(options){
 			}
 		});
 		on('open',function(data){
-			console.log('Socket id is : '+data);
-			socket.id = data;
+			connection.socket_id = data;
 		})
 		socket.onopen = function() {
 			connection.state = 'connected';
@@ -233,6 +232,7 @@ function Surge(options){
 function Connection(){
 	this.rooms  = [];
 	this.state 	= 'not initialized';
+	this.socket_id;
 }
 
 Connection.prototype.inRoom = function(room){
