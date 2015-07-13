@@ -26,9 +26,7 @@ function Surge(options){
 	var connection = new Connection();
 
 	//TODO: check if url is ip or not
-	socket = _connect();
-
-	_surgeEvents();
+	connect();
 
 	var api = {
 		on 					: on,
@@ -69,6 +67,7 @@ function Surge(options){
 
 	function connect(){
     socket = _connect();
+    _initSocket();
     _surgeEvents();
 	}
 
@@ -84,7 +83,6 @@ function Surge(options){
 		data.message = arguments[arguments.length-1];
 		data.channel = arguments.length === 3 ? arguments[0] : undefined;
 
-		
 		if(socket){
 			if(debug===true){
 				console.log('Surge : Event sent : ' + JSON.stringify(data));
@@ -150,7 +148,8 @@ function Surge(options){
 		on('open',function(data){
 			connection.socket_id = data;
 		});
-
+	}
+	function _initSocket(){
 		socket.onopen = function() {
 			connection.state = 'connected';
 			//In case of reconnection, resubscribe to rooms
@@ -169,7 +168,7 @@ function Surge(options){
 				connection.state='attempting reconnection';
 				reconnecting = true;
 				recInterval = setInterval(function() {
-					socket = connect();
+					connect();
 					clearInterval(recInterval);
 				}, 2000);
 			}
@@ -198,7 +197,6 @@ function Surge(options){
 			}
 			
 		}
-
 		function reconnect(){
 			//resubscribe to rooms
 			for (var i = connection.rooms.length - 1; i >= 0; i--) {

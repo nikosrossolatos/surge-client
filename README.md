@@ -84,9 +84,6 @@ Returns all rooms the socket currently exists in.
 ##### `connection.inRoom(room)` 
 Returns true : false.
 
-### `.socket`
-Returns the original SockJS socket handler. *Warning*:  You will be able to override the socket.onmessage, socket.onopen and socket.onclose.
-
 ## Events 
 Event Name            | Description
 ----------------------|-----------------------------------------------------------------------------------------------
