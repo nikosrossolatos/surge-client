@@ -5684,7 +5684,6 @@ function Surge(options){
 	//Private functions
 	function _surgeEvents(){
     on('surge-joined-room',function(room){
-    	alert("running");
 	  	if(!connection.inRoom(room)){
 	  		connection.rooms.push(room);
 	  		channels[room].state = 'connected';
