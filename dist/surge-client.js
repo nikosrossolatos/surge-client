@@ -91,6 +91,502 @@ process.chdir = function (dir) {
 process.umask = function() { return 0; };
 
 },{}],2:[function(require,module,exports){
+
+/**
+ * This is the web browser implementation of `debug()`.
+ *
+ * Expose `debug()` as the module.
+ */
+
+exports = module.exports = require('./debug');
+exports.log = log;
+exports.formatArgs = formatArgs;
+exports.save = save;
+exports.load = load;
+exports.useColors = useColors;
+exports.storage = 'undefined' != typeof chrome
+               && 'undefined' != typeof chrome.storage
+                  ? chrome.storage.local
+                  : localstorage();
+
+/**
+ * Colors.
+ */
+
+exports.colors = [
+  'lightseagreen',
+  'forestgreen',
+  'goldenrod',
+  'dodgerblue',
+  'darkorchid',
+  'crimson'
+];
+
+/**
+ * Currently only WebKit-based Web Inspectors, Firefox >= v31,
+ * and the Firebug extension (any Firefox version) are known
+ * to support "%c" CSS customizations.
+ *
+ * TODO: add a `localStorage` variable to explicitly enable/disable colors
+ */
+
+function useColors() {
+  // is webkit? http://stackoverflow.com/a/16459606/376773
+  return ('WebkitAppearance' in document.documentElement.style) ||
+    // is firebug? http://stackoverflow.com/a/398120/376773
+    (window.console && (console.firebug || (console.exception && console.table))) ||
+    // is firefox >= v31?
+    // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+    (navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31);
+}
+
+/**
+ * Map %j to `JSON.stringify()`, since no Web Inspectors do that by default.
+ */
+
+exports.formatters.j = function(v) {
+  return JSON.stringify(v);
+};
+
+
+/**
+ * Colorize log arguments if enabled.
+ *
+ * @api public
+ */
+
+function formatArgs() {
+  var args = arguments;
+  var useColors = this.useColors;
+
+  args[0] = (useColors ? '%c' : '')
+    + this.namespace
+    + (useColors ? ' %c' : ' ')
+    + args[0]
+    + (useColors ? '%c ' : ' ')
+    + '+' + exports.humanize(this.diff);
+
+  if (!useColors) return args;
+
+  var c = 'color: ' + this.color;
+  args = [args[0], c, 'color: inherit'].concat(Array.prototype.slice.call(args, 1));
+
+  // the final "%c" is somewhat tricky, because there could be other
+  // arguments passed either before or after the %c, so we need to
+  // figure out the correct index to insert the CSS into
+  var index = 0;
+  var lastC = 0;
+  args[0].replace(/%[a-z%]/g, function(match) {
+    if ('%%' === match) return;
+    index++;
+    if ('%c' === match) {
+      // we only are interested in the *last* %c
+      // (the user may have provided their own)
+      lastC = index;
+    }
+  });
+
+  args.splice(lastC, 0, c);
+  return args;
+}
+
+/**
+ * Invokes `console.log()` when available.
+ * No-op when `console.log` is not a "function".
+ *
+ * @api public
+ */
+
+function log() {
+  // this hackery is required for IE8/9, where
+  // the `console.log` function doesn't have 'apply'
+  return 'object' === typeof console
+    && console.log
+    && Function.prototype.apply.call(console.log, console, arguments);
+}
+
+/**
+ * Save `namespaces`.
+ *
+ * @param {String} namespaces
+ * @api private
+ */
+
+function save(namespaces) {
+  try {
+    if (null == namespaces) {
+      exports.storage.removeItem('debug');
+    } else {
+      exports.storage.debug = namespaces;
+    }
+  } catch(e) {}
+}
+
+/**
+ * Load `namespaces`.
+ *
+ * @return {String} returns the previously persisted debug modes
+ * @api private
+ */
+
+function load() {
+  var r;
+  try {
+    r = exports.storage.debug;
+  } catch(e) {}
+  return r;
+}
+
+/**
+ * Enable namespaces listed in `localStorage.debug` initially.
+ */
+
+exports.enable(load());
+
+/**
+ * Localstorage attempts to return the localstorage.
+ *
+ * This is necessary because safari throws
+ * when a user disables cookies/localstorage
+ * and you attempt to access it.
+ *
+ * @return {LocalStorage}
+ * @api private
+ */
+
+function localstorage(){
+  try {
+    return window.localStorage;
+  } catch (e) {}
+}
+
+},{"./debug":3}],3:[function(require,module,exports){
+
+/**
+ * This is the common logic for both the Node.js and web browser
+ * implementations of `debug()`.
+ *
+ * Expose `debug()` as the module.
+ */
+
+exports = module.exports = debug;
+exports.coerce = coerce;
+exports.disable = disable;
+exports.enable = enable;
+exports.enabled = enabled;
+exports.humanize = require('ms');
+
+/**
+ * The currently active debug mode names, and names to skip.
+ */
+
+exports.names = [];
+exports.skips = [];
+
+/**
+ * Map of special "%n" handling functions, for the debug "format" argument.
+ *
+ * Valid key names are a single, lowercased letter, i.e. "n".
+ */
+
+exports.formatters = {};
+
+/**
+ * Previously assigned color.
+ */
+
+var prevColor = 0;
+
+/**
+ * Previous log timestamp.
+ */
+
+var prevTime;
+
+/**
+ * Select a color.
+ *
+ * @return {Number}
+ * @api private
+ */
+
+function selectColor() {
+  return exports.colors[prevColor++ % exports.colors.length];
+}
+
+/**
+ * Create a debugger with the given `namespace`.
+ *
+ * @param {String} namespace
+ * @return {Function}
+ * @api public
+ */
+
+function debug(namespace) {
+
+  // define the `disabled` version
+  function disabled() {
+  }
+  disabled.enabled = false;
+
+  // define the `enabled` version
+  function enabled() {
+
+    var self = enabled;
+
+    // set `diff` timestamp
+    var curr = +new Date();
+    var ms = curr - (prevTime || curr);
+    self.diff = ms;
+    self.prev = prevTime;
+    self.curr = curr;
+    prevTime = curr;
+
+    // add the `color` if not set
+    if (null == self.useColors) self.useColors = exports.useColors();
+    if (null == self.color && self.useColors) self.color = selectColor();
+
+    var args = Array.prototype.slice.call(arguments);
+
+    args[0] = exports.coerce(args[0]);
+
+    if ('string' !== typeof args[0]) {
+      // anything else let's inspect with %o
+      args = ['%o'].concat(args);
+    }
+
+    // apply any `formatters` transformations
+    var index = 0;
+    args[0] = args[0].replace(/%([a-z%])/g, function(match, format) {
+      // if we encounter an escaped % then don't increase the array index
+      if (match === '%%') return match;
+      index++;
+      var formatter = exports.formatters[format];
+      if ('function' === typeof formatter) {
+        var val = args[index];
+        match = formatter.call(self, val);
+
+        // now we need to remove `args[index]` since it's inlined in the `format`
+        args.splice(index, 1);
+        index--;
+      }
+      return match;
+    });
+
+    if ('function' === typeof exports.formatArgs) {
+      args = exports.formatArgs.apply(self, args);
+    }
+    var logFn = enabled.log || exports.log || console.log.bind(console);
+    logFn.apply(self, args);
+  }
+  enabled.enabled = true;
+
+  var fn = exports.enabled(namespace) ? enabled : disabled;
+
+  fn.namespace = namespace;
+
+  return fn;
+}
+
+/**
+ * Enables a debug mode by namespaces. This can include modes
+ * separated by a colon and wildcards.
+ *
+ * @param {String} namespaces
+ * @api public
+ */
+
+function enable(namespaces) {
+  exports.save(namespaces);
+
+  var split = (namespaces || '').split(/[\s,]+/);
+  var len = split.length;
+
+  for (var i = 0; i < len; i++) {
+    if (!split[i]) continue; // ignore empty strings
+    namespaces = split[i].replace(/\*/g, '.*?');
+    if (namespaces[0] === '-') {
+      exports.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
+    } else {
+      exports.names.push(new RegExp('^' + namespaces + '$'));
+    }
+  }
+}
+
+/**
+ * Disable debug output.
+ *
+ * @api public
+ */
+
+function disable() {
+  exports.enable('');
+}
+
+/**
+ * Returns true if the given mode name is enabled, false otherwise.
+ *
+ * @param {String} name
+ * @return {Boolean}
+ * @api public
+ */
+
+function enabled(name) {
+  var i, len;
+  for (i = 0, len = exports.skips.length; i < len; i++) {
+    if (exports.skips[i].test(name)) {
+      return false;
+    }
+  }
+  for (i = 0, len = exports.names.length; i < len; i++) {
+    if (exports.names[i].test(name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Coerce `val`.
+ *
+ * @param {Mixed} val
+ * @return {Mixed}
+ * @api private
+ */
+
+function coerce(val) {
+  if (val instanceof Error) return val.stack || val.message;
+  return val;
+}
+
+},{"ms":4}],4:[function(require,module,exports){
+/**
+ * Helpers.
+ */
+
+var s = 1000;
+var m = s * 60;
+var h = m * 60;
+var d = h * 24;
+var y = d * 365.25;
+
+/**
+ * Parse or format the given `val`.
+ *
+ * Options:
+ *
+ *  - `long` verbose formatting [false]
+ *
+ * @param {String|Number} val
+ * @param {Object} options
+ * @return {String|Number}
+ * @api public
+ */
+
+module.exports = function(val, options){
+  options = options || {};
+  if ('string' == typeof val) return parse(val);
+  return options.long
+    ? long(val)
+    : short(val);
+};
+
+/**
+ * Parse the given `str` and return milliseconds.
+ *
+ * @param {String} str
+ * @return {Number}
+ * @api private
+ */
+
+function parse(str) {
+  str = '' + str;
+  if (str.length > 10000) return;
+  var match = /^((?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|years?|yrs?|y)?$/i.exec(str);
+  if (!match) return;
+  var n = parseFloat(match[1]);
+  var type = (match[2] || 'ms').toLowerCase();
+  switch (type) {
+    case 'years':
+    case 'year':
+    case 'yrs':
+    case 'yr':
+    case 'y':
+      return n * y;
+    case 'days':
+    case 'day':
+    case 'd':
+      return n * d;
+    case 'hours':
+    case 'hour':
+    case 'hrs':
+    case 'hr':
+    case 'h':
+      return n * h;
+    case 'minutes':
+    case 'minute':
+    case 'mins':
+    case 'min':
+    case 'm':
+      return n * m;
+    case 'seconds':
+    case 'second':
+    case 'secs':
+    case 'sec':
+    case 's':
+      return n * s;
+    case 'milliseconds':
+    case 'millisecond':
+    case 'msecs':
+    case 'msec':
+    case 'ms':
+      return n;
+  }
+}
+
+/**
+ * Short format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function short(ms) {
+  if (ms >= d) return Math.round(ms / d) + 'd';
+  if (ms >= h) return Math.round(ms / h) + 'h';
+  if (ms >= m) return Math.round(ms / m) + 'm';
+  if (ms >= s) return Math.round(ms / s) + 's';
+  return ms + 'ms';
+}
+
+/**
+ * Long format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function long(ms) {
+  return plural(ms, d, 'day')
+    || plural(ms, h, 'hour')
+    || plural(ms, m, 'minute')
+    || plural(ms, s, 'second')
+    || ms + ' ms';
+}
+
+/**
+ * Pluralization helper.
+ */
+
+function plural(ms, n, name) {
+  if (ms < n) return;
+  if (ms < n * 1.5) return Math.floor(ms / n) + ' ' + name;
+  return Math.ceil(ms / n) + ' ' + name + 's';
+}
+
+},{}],5:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -104,7 +600,7 @@ if ('_sockjs_onload' in global) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./main":15,"./transport-list":17}],3:[function(require,module,exports){
+},{"./main":18,"./transport-list":20}],6:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -123,7 +619,7 @@ inherits(CloseEvent, Event);
 
 module.exports = CloseEvent;
 
-},{"./event":5,"inherits":58}],4:[function(require,module,exports){
+},{"./event":8,"inherits":58}],7:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -176,7 +672,7 @@ EventEmitter.prototype.removeListener = EventTarget.prototype.removeEventListene
 
 module.exports.EventEmitter = EventEmitter;
 
-},{"./eventtarget":6,"inherits":58}],5:[function(require,module,exports){
+},{"./eventtarget":9,"inherits":58}],8:[function(require,module,exports){
 'use strict';
 
 function Event(eventType) {
@@ -200,7 +696,7 @@ Event.BUBBLING_PHASE  = 3;
 
 module.exports = Event;
 
-},{}],6:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 'use strict';
 
 /* Simplified implementation of DOM2 EventTarget.
@@ -262,7 +758,7 @@ EventTarget.prototype.dispatchEvent = function(event) {
 
 module.exports = EventTarget;
 
-},{}],7:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -279,7 +775,7 @@ inherits(TransportMessageEvent, Event);
 
 module.exports = TransportMessageEvent;
 
-},{"./event":5,"inherits":58}],8:[function(require,module,exports){
+},{"./event":8,"inherits":58}],11:[function(require,module,exports){
 'use strict';
 
 var JSON3 = require('json3')
@@ -308,7 +804,7 @@ FacadeJS.prototype._close = function() {
 
 module.exports = FacadeJS;
 
-},{"./utils/iframe":48,"json3":59}],9:[function(require,module,exports){
+},{"./utils/iframe":51,"json3":59}],12:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -414,7 +910,7 @@ module.exports = function(SockJS, availableTransports) {
 };
 
 }).call(this,require('_process'))
-},{"./facade":8,"./info-iframe-receiver":11,"./location":14,"./utils/event":47,"./utils/iframe":48,"./utils/url":53,"_process":1,"debug":55,"json3":59}],10:[function(require,module,exports){
+},{"./facade":11,"./info-iframe-receiver":14,"./location":17,"./utils/event":50,"./utils/iframe":51,"./utils/url":56,"_process":1,"debug":2,"json3":59}],13:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -467,7 +963,7 @@ InfoAjax.prototype.close = function() {
 module.exports = InfoAjax;
 
 }).call(this,require('_process'))
-},{"./utils/object":50,"_process":1,"debug":55,"events":4,"inherits":58,"json3":59}],11:[function(require,module,exports){
+},{"./utils/object":53,"_process":1,"debug":2,"events":7,"inherits":58,"json3":59}],14:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -502,7 +998,7 @@ InfoReceiverIframe.prototype.close = function() {
 
 module.exports = InfoReceiverIframe;
 
-},{"./info-ajax":10,"./transport/sender/xhr-local":38,"events":4,"inherits":58,"json3":59}],12:[function(require,module,exports){
+},{"./info-ajax":13,"./transport/sender/xhr-local":41,"events":7,"inherits":58,"json3":59}],15:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -575,7 +1071,7 @@ InfoIframe.prototype.close = function() {
 module.exports = InfoIframe;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./info-iframe-receiver":11,"./transport/iframe":23,"./utils/event":47,"_process":1,"debug":55,"events":4,"inherits":58,"json3":59}],13:[function(require,module,exports){
+},{"./info-iframe-receiver":14,"./transport/iframe":26,"./utils/event":50,"_process":1,"debug":2,"events":7,"inherits":58,"json3":59}],16:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -668,7 +1164,7 @@ InfoReceiver.timeout = 8000;
 module.exports = InfoReceiver;
 
 }).call(this,require('_process'))
-},{"./info-ajax":10,"./info-iframe":12,"./transport/sender/xdr":35,"./transport/sender/xhr-cors":36,"./transport/sender/xhr-fake":37,"./transport/sender/xhr-local":38,"./utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],14:[function(require,module,exports){
+},{"./info-ajax":13,"./info-iframe":15,"./transport/sender/xdr":38,"./transport/sender/xhr-cors":39,"./transport/sender/xhr-fake":40,"./transport/sender/xhr-local":41,"./utils/url":56,"_process":1,"debug":2,"events":7,"inherits":58}],17:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -682,7 +1178,7 @@ module.exports = global.location || {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],15:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -1055,7 +1551,7 @@ module.exports = function(availableTransports) {
 };
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./event/close":3,"./event/event":5,"./event/eventtarget":6,"./event/trans-message":7,"./iframe-bootstrap":9,"./info-receiver":13,"./location":14,"./shims":16,"./utils/browser":45,"./utils/escape":46,"./utils/event":47,"./utils/log":49,"./utils/object":50,"./utils/random":51,"./utils/transport":52,"./utils/url":53,"./version":54,"_process":1,"debug":55,"inherits":58,"json3":59,"url-parse":60}],16:[function(require,module,exports){
+},{"./event/close":6,"./event/event":8,"./event/eventtarget":9,"./event/trans-message":10,"./iframe-bootstrap":12,"./info-receiver":16,"./location":17,"./shims":19,"./utils/browser":48,"./utils/escape":49,"./utils/event":50,"./utils/log":52,"./utils/object":53,"./utils/random":54,"./utils/transport":55,"./utils/url":56,"./version":57,"_process":1,"debug":2,"inherits":58,"json3":59,"url-parse":60}],19:[function(require,module,exports){
 /* eslint-disable */
 /* jscs: disable */
 'use strict';
@@ -1530,7 +2026,7 @@ defineProperties(StringPrototype, {
     }
 }, hasNegativeSubstrBug);
 
-},{}],17:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 'use strict';
 
 module.exports = [
@@ -1550,7 +2046,7 @@ module.exports = [
 , require('./transport/jsonp-polling')
 ];
 
-},{"./transport/eventsource":21,"./transport/htmlfile":22,"./transport/jsonp-polling":24,"./transport/lib/iframe-wrap":27,"./transport/websocket":39,"./transport/xdr-polling":40,"./transport/xdr-streaming":41,"./transport/xhr-polling":42,"./transport/xhr-streaming":43}],18:[function(require,module,exports){
+},{"./transport/eventsource":24,"./transport/htmlfile":25,"./transport/jsonp-polling":27,"./transport/lib/iframe-wrap":30,"./transport/websocket":42,"./transport/xdr-polling":43,"./transport/xdr-streaming":44,"./transport/xhr-polling":45,"./transport/xhr-streaming":46}],21:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -1739,17 +2235,17 @@ AbstractXHRObject.supportsCORS = cors;
 module.exports = AbstractXHRObject;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/event":47,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],19:[function(require,module,exports){
+},{"../../utils/event":50,"../../utils/url":56,"_process":1,"debug":2,"events":7,"inherits":58}],22:[function(require,module,exports){
 (function (global){
 module.exports = global.EventSource;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 (function (global){
 module.exports = global.WebSocket || global.MozWebSocket;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],21:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -1778,7 +2274,7 @@ EventSourceTransport.roundTrips = 2;
 
 module.exports = EventSourceTransport;
 
-},{"./lib/ajax-based":25,"./receiver/eventsource":30,"./sender/xhr-cors":36,"eventsource":19,"inherits":58}],22:[function(require,module,exports){
+},{"./lib/ajax-based":28,"./receiver/eventsource":33,"./sender/xhr-cors":39,"eventsource":22,"inherits":58}],25:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -1805,7 +2301,7 @@ HtmlFileTransport.roundTrips = 2;
 
 module.exports = HtmlFileTransport;
 
-},{"./lib/ajax-based":25,"./receiver/htmlfile":31,"./sender/xhr-local":38,"inherits":58}],23:[function(require,module,exports){
+},{"./lib/ajax-based":28,"./receiver/htmlfile":34,"./sender/xhr-local":41,"inherits":58}],26:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -1948,7 +2444,7 @@ IframeTransport.roundTrips = 2;
 module.exports = IframeTransport;
 
 }).call(this,require('_process'))
-},{"../utils/event":47,"../utils/iframe":48,"../utils/random":51,"../utils/url":53,"../version":54,"_process":1,"debug":55,"events":4,"inherits":58,"json3":59}],24:[function(require,module,exports){
+},{"../utils/event":50,"../utils/iframe":51,"../utils/random":54,"../utils/url":56,"../version":57,"_process":1,"debug":2,"events":7,"inherits":58,"json3":59}],27:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -1986,7 +2482,7 @@ JsonPTransport.needBody = true;
 module.exports = JsonPTransport;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./lib/sender-receiver":29,"./receiver/jsonp":32,"./sender/jsonp":34,"inherits":58}],25:[function(require,module,exports){
+},{"./lib/sender-receiver":32,"./receiver/jsonp":35,"./sender/jsonp":37,"inherits":58}],28:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2039,7 +2535,7 @@ inherits(AjaxBasedTransport, SenderReceiver);
 module.exports = AjaxBasedTransport;
 
 }).call(this,require('_process'))
-},{"../../utils/url":53,"./sender-receiver":29,"_process":1,"debug":55,"inherits":58}],26:[function(require,module,exports){
+},{"../../utils/url":56,"./sender-receiver":32,"_process":1,"debug":2,"inherits":58}],29:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2130,7 +2626,7 @@ BufferedSender.prototype.stop = function() {
 module.exports = BufferedSender;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"inherits":58}],27:[function(require,module,exports){
+},{"_process":1,"debug":2,"events":7,"inherits":58}],30:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -2167,7 +2663,7 @@ module.exports = function(transport) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/object":50,"../iframe":23,"inherits":58}],28:[function(require,module,exports){
+},{"../../utils/object":53,"../iframe":26,"inherits":58}],31:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2228,7 +2724,7 @@ Polling.prototype.abort = function() {
 module.exports = Polling;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"inherits":58}],29:[function(require,module,exports){
+},{"_process":1,"debug":2,"events":7,"inherits":58}],32:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2277,7 +2773,7 @@ SenderReceiver.prototype.close = function() {
 module.exports = SenderReceiver;
 
 }).call(this,require('_process'))
-},{"../../utils/url":53,"./buffered-sender":26,"./polling":28,"_process":1,"debug":55,"inherits":58}],30:[function(require,module,exports){
+},{"../../utils/url":56,"./buffered-sender":29,"./polling":31,"_process":1,"debug":2,"inherits":58}],33:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2344,7 +2840,7 @@ EventSourceReceiver.prototype._close = function(reason) {
 module.exports = EventSourceReceiver;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"eventsource":19,"inherits":58}],31:[function(require,module,exports){
+},{"_process":1,"debug":2,"events":7,"eventsource":22,"inherits":58}],34:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2433,7 +2929,7 @@ HtmlfileReceiver.enabled = HtmlfileReceiver.htmlfileEnabled || iframeUtils.ifram
 module.exports = HtmlfileReceiver;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/iframe":48,"../../utils/random":51,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],32:[function(require,module,exports){
+},{"../../utils/iframe":51,"../../utils/random":54,"../../utils/url":56,"_process":1,"debug":2,"events":7,"inherits":58}],35:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2616,7 +3112,7 @@ JsonpReceiver.prototype._createScript = function(url) {
 module.exports = JsonpReceiver;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/browser":45,"../../utils/iframe":48,"../../utils/random":51,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],33:[function(require,module,exports){
+},{"../../utils/browser":48,"../../utils/iframe":51,"../../utils/random":54,"../../utils/url":56,"_process":1,"debug":2,"events":7,"inherits":58}],36:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2690,7 +3186,7 @@ XhrReceiver.prototype.abort = function() {
 module.exports = XhrReceiver;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"inherits":58}],34:[function(require,module,exports){
+},{"_process":1,"debug":2,"events":7,"inherits":58}],37:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2793,7 +3289,7 @@ module.exports = function(url, payload, callback) {
 };
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/random":51,"../../utils/url":53,"_process":1,"debug":55}],35:[function(require,module,exports){
+},{"../../utils/random":54,"../../utils/url":56,"_process":1,"debug":2}],38:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2898,7 +3394,7 @@ XDRObject.enabled = !!(global.XDomainRequest && browser.hasDomain());
 module.exports = XDRObject;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/browser":45,"../../utils/event":47,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],36:[function(require,module,exports){
+},{"../../utils/browser":48,"../../utils/event":50,"../../utils/url":56,"_process":1,"debug":2,"events":7,"inherits":58}],39:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -2915,7 +3411,7 @@ XHRCorsObject.enabled = XhrDriver.enabled && XhrDriver.supportsCORS;
 
 module.exports = XHRCorsObject;
 
-},{"../driver/xhr":18,"inherits":58}],37:[function(require,module,exports){
+},{"../driver/xhr":21,"inherits":58}],40:[function(require,module,exports){
 'use strict';
 
 var EventEmitter = require('events').EventEmitter
@@ -2941,7 +3437,7 @@ XHRFake.timeout = 2000;
 
 module.exports = XHRFake;
 
-},{"events":4,"inherits":58}],38:[function(require,module,exports){
+},{"events":7,"inherits":58}],41:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -2960,7 +3456,7 @@ XHRLocalObject.enabled = XhrDriver.enabled;
 
 module.exports = XHRLocalObject;
 
-},{"../driver/xhr":18,"inherits":58}],39:[function(require,module,exports){
+},{"../driver/xhr":21,"inherits":58}],42:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3062,7 +3558,7 @@ WebSocketTransport.roundTrips = 2;
 module.exports = WebSocketTransport;
 
 }).call(this,require('_process'))
-},{"../utils/event":47,"../utils/url":53,"./driver/websocket":20,"_process":1,"debug":55,"events":4,"inherits":58}],40:[function(require,module,exports){
+},{"../utils/event":50,"../utils/url":56,"./driver/websocket":23,"_process":1,"debug":2,"events":7,"inherits":58}],43:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -3087,7 +3583,7 @@ XdrPollingTransport.roundTrips = 2; // preflight, ajax
 
 module.exports = XdrPollingTransport;
 
-},{"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xdr":35,"./xdr-streaming":41,"inherits":58}],41:[function(require,module,exports){
+},{"./lib/ajax-based":28,"./receiver/xhr":36,"./sender/xdr":38,"./xdr-streaming":44,"inherits":58}],44:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -3121,7 +3617,7 @@ XdrStreamingTransport.roundTrips = 2; // preflight, ajax
 
 module.exports = XdrStreamingTransport;
 
-},{"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xdr":35,"inherits":58}],42:[function(require,module,exports){
+},{"./lib/ajax-based":28,"./receiver/xhr":36,"./sender/xdr":38,"inherits":58}],45:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -3156,7 +3652,7 @@ XhrPollingTransport.roundTrips = 2; // preflight, ajax
 
 module.exports = XhrPollingTransport;
 
-},{"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xhr-cors":36,"./sender/xhr-local":38,"inherits":58}],43:[function(require,module,exports){
+},{"./lib/ajax-based":28,"./receiver/xhr":36,"./sender/xhr-cors":39,"./sender/xhr-local":41,"inherits":58}],46:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3201,7 +3697,7 @@ XhrStreamingTransport.needBody = !!global.document;
 module.exports = XhrStreamingTransport;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../utils/browser":45,"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xhr-cors":36,"./sender/xhr-local":38,"inherits":58}],44:[function(require,module,exports){
+},{"../utils/browser":48,"./lib/ajax-based":28,"./receiver/xhr":36,"./sender/xhr-cors":39,"./sender/xhr-local":41,"inherits":58}],47:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3222,7 +3718,7 @@ if (global.crypto && global.crypto.getRandomValues) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],45:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3253,7 +3749,7 @@ module.exports = {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],46:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 'use strict';
 
 var JSON3 = require('json3');
@@ -3304,7 +3800,7 @@ module.exports = {
   }
 };
 
-},{"json3":59}],47:[function(require,module,exports){
+},{"json3":59}],50:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3373,7 +3869,7 @@ var unloadTriggered = function() {
 module.exports.attachEvent('unload', unloadTriggered);
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./random":51}],48:[function(require,module,exports){
+},{"./random":54}],51:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -3558,7 +4054,7 @@ if (global.document) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./browser":45,"./event":47,"_process":1,"debug":55,"json3":59}],49:[function(require,module,exports){
+},{"./browser":48,"./event":50,"_process":1,"debug":2,"json3":59}],52:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3573,7 +4069,7 @@ var logObject = {};
 module.exports = logObject;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],50:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -3599,7 +4095,7 @@ module.exports = {
   }
 };
 
-},{}],51:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 'use strict';
 
 /* global crypto:true */
@@ -3630,7 +4126,7 @@ module.exports = {
   }
 };
 
-},{"crypto":44}],52:[function(require,module,exports){
+},{"crypto":47}],55:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3684,7 +4180,7 @@ module.exports = function(availableTransports) {
 };
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55}],53:[function(require,module,exports){
+},{"_process":1,"debug":2}],56:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3735,504 +4231,8 @@ module.exports = {
 };
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"url-parse":60}],54:[function(require,module,exports){
+},{"_process":1,"debug":2,"url-parse":60}],57:[function(require,module,exports){
 module.exports = '1.0.0';
-},{}],55:[function(require,module,exports){
-
-/**
- * This is the web browser implementation of `debug()`.
- *
- * Expose `debug()` as the module.
- */
-
-exports = module.exports = require('./debug');
-exports.log = log;
-exports.formatArgs = formatArgs;
-exports.save = save;
-exports.load = load;
-exports.useColors = useColors;
-exports.storage = 'undefined' != typeof chrome
-               && 'undefined' != typeof chrome.storage
-                  ? chrome.storage.local
-                  : localstorage();
-
-/**
- * Colors.
- */
-
-exports.colors = [
-  'lightseagreen',
-  'forestgreen',
-  'goldenrod',
-  'dodgerblue',
-  'darkorchid',
-  'crimson'
-];
-
-/**
- * Currently only WebKit-based Web Inspectors, Firefox >= v31,
- * and the Firebug extension (any Firefox version) are known
- * to support "%c" CSS customizations.
- *
- * TODO: add a `localStorage` variable to explicitly enable/disable colors
- */
-
-function useColors() {
-  // is webkit? http://stackoverflow.com/a/16459606/376773
-  return ('WebkitAppearance' in document.documentElement.style) ||
-    // is firebug? http://stackoverflow.com/a/398120/376773
-    (window.console && (console.firebug || (console.exception && console.table))) ||
-    // is firefox >= v31?
-    // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
-    (navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31);
-}
-
-/**
- * Map %j to `JSON.stringify()`, since no Web Inspectors do that by default.
- */
-
-exports.formatters.j = function(v) {
-  return JSON.stringify(v);
-};
-
-
-/**
- * Colorize log arguments if enabled.
- *
- * @api public
- */
-
-function formatArgs() {
-  var args = arguments;
-  var useColors = this.useColors;
-
-  args[0] = (useColors ? '%c' : '')
-    + this.namespace
-    + (useColors ? ' %c' : ' ')
-    + args[0]
-    + (useColors ? '%c ' : ' ')
-    + '+' + exports.humanize(this.diff);
-
-  if (!useColors) return args;
-
-  var c = 'color: ' + this.color;
-  args = [args[0], c, 'color: inherit'].concat(Array.prototype.slice.call(args, 1));
-
-  // the final "%c" is somewhat tricky, because there could be other
-  // arguments passed either before or after the %c, so we need to
-  // figure out the correct index to insert the CSS into
-  var index = 0;
-  var lastC = 0;
-  args[0].replace(/%[a-z%]/g, function(match) {
-    if ('%%' === match) return;
-    index++;
-    if ('%c' === match) {
-      // we only are interested in the *last* %c
-      // (the user may have provided their own)
-      lastC = index;
-    }
-  });
-
-  args.splice(lastC, 0, c);
-  return args;
-}
-
-/**
- * Invokes `console.log()` when available.
- * No-op when `console.log` is not a "function".
- *
- * @api public
- */
-
-function log() {
-  // this hackery is required for IE8/9, where
-  // the `console.log` function doesn't have 'apply'
-  return 'object' === typeof console
-    && console.log
-    && Function.prototype.apply.call(console.log, console, arguments);
-}
-
-/**
- * Save `namespaces`.
- *
- * @param {String} namespaces
- * @api private
- */
-
-function save(namespaces) {
-  try {
-    if (null == namespaces) {
-      exports.storage.removeItem('debug');
-    } else {
-      exports.storage.debug = namespaces;
-    }
-  } catch(e) {}
-}
-
-/**
- * Load `namespaces`.
- *
- * @return {String} returns the previously persisted debug modes
- * @api private
- */
-
-function load() {
-  var r;
-  try {
-    r = exports.storage.debug;
-  } catch(e) {}
-  return r;
-}
-
-/**
- * Enable namespaces listed in `localStorage.debug` initially.
- */
-
-exports.enable(load());
-
-/**
- * Localstorage attempts to return the localstorage.
- *
- * This is necessary because safari throws
- * when a user disables cookies/localstorage
- * and you attempt to access it.
- *
- * @return {LocalStorage}
- * @api private
- */
-
-function localstorage(){
-  try {
-    return window.localStorage;
-  } catch (e) {}
-}
-
-},{"./debug":56}],56:[function(require,module,exports){
-
-/**
- * This is the common logic for both the Node.js and web browser
- * implementations of `debug()`.
- *
- * Expose `debug()` as the module.
- */
-
-exports = module.exports = debug;
-exports.coerce = coerce;
-exports.disable = disable;
-exports.enable = enable;
-exports.enabled = enabled;
-exports.humanize = require('ms');
-
-/**
- * The currently active debug mode names, and names to skip.
- */
-
-exports.names = [];
-exports.skips = [];
-
-/**
- * Map of special "%n" handling functions, for the debug "format" argument.
- *
- * Valid key names are a single, lowercased letter, i.e. "n".
- */
-
-exports.formatters = {};
-
-/**
- * Previously assigned color.
- */
-
-var prevColor = 0;
-
-/**
- * Previous log timestamp.
- */
-
-var prevTime;
-
-/**
- * Select a color.
- *
- * @return {Number}
- * @api private
- */
-
-function selectColor() {
-  return exports.colors[prevColor++ % exports.colors.length];
-}
-
-/**
- * Create a debugger with the given `namespace`.
- *
- * @param {String} namespace
- * @return {Function}
- * @api public
- */
-
-function debug(namespace) {
-
-  // define the `disabled` version
-  function disabled() {
-  }
-  disabled.enabled = false;
-
-  // define the `enabled` version
-  function enabled() {
-
-    var self = enabled;
-
-    // set `diff` timestamp
-    var curr = +new Date();
-    var ms = curr - (prevTime || curr);
-    self.diff = ms;
-    self.prev = prevTime;
-    self.curr = curr;
-    prevTime = curr;
-
-    // add the `color` if not set
-    if (null == self.useColors) self.useColors = exports.useColors();
-    if (null == self.color && self.useColors) self.color = selectColor();
-
-    var args = Array.prototype.slice.call(arguments);
-
-    args[0] = exports.coerce(args[0]);
-
-    if ('string' !== typeof args[0]) {
-      // anything else let's inspect with %o
-      args = ['%o'].concat(args);
-    }
-
-    // apply any `formatters` transformations
-    var index = 0;
-    args[0] = args[0].replace(/%([a-z%])/g, function(match, format) {
-      // if we encounter an escaped % then don't increase the array index
-      if (match === '%%') return match;
-      index++;
-      var formatter = exports.formatters[format];
-      if ('function' === typeof formatter) {
-        var val = args[index];
-        match = formatter.call(self, val);
-
-        // now we need to remove `args[index]` since it's inlined in the `format`
-        args.splice(index, 1);
-        index--;
-      }
-      return match;
-    });
-
-    if ('function' === typeof exports.formatArgs) {
-      args = exports.formatArgs.apply(self, args);
-    }
-    var logFn = enabled.log || exports.log || console.log.bind(console);
-    logFn.apply(self, args);
-  }
-  enabled.enabled = true;
-
-  var fn = exports.enabled(namespace) ? enabled : disabled;
-
-  fn.namespace = namespace;
-
-  return fn;
-}
-
-/**
- * Enables a debug mode by namespaces. This can include modes
- * separated by a colon and wildcards.
- *
- * @param {String} namespaces
- * @api public
- */
-
-function enable(namespaces) {
-  exports.save(namespaces);
-
-  var split = (namespaces || '').split(/[\s,]+/);
-  var len = split.length;
-
-  for (var i = 0; i < len; i++) {
-    if (!split[i]) continue; // ignore empty strings
-    namespaces = split[i].replace(/\*/g, '.*?');
-    if (namespaces[0] === '-') {
-      exports.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
-    } else {
-      exports.names.push(new RegExp('^' + namespaces + '$'));
-    }
-  }
-}
-
-/**
- * Disable debug output.
- *
- * @api public
- */
-
-function disable() {
-  exports.enable('');
-}
-
-/**
- * Returns true if the given mode name is enabled, false otherwise.
- *
- * @param {String} name
- * @return {Boolean}
- * @api public
- */
-
-function enabled(name) {
-  var i, len;
-  for (i = 0, len = exports.skips.length; i < len; i++) {
-    if (exports.skips[i].test(name)) {
-      return false;
-    }
-  }
-  for (i = 0, len = exports.names.length; i < len; i++) {
-    if (exports.names[i].test(name)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Coerce `val`.
- *
- * @param {Mixed} val
- * @return {Mixed}
- * @api private
- */
-
-function coerce(val) {
-  if (val instanceof Error) return val.stack || val.message;
-  return val;
-}
-
-},{"ms":57}],57:[function(require,module,exports){
-/**
- * Helpers.
- */
-
-var s = 1000;
-var m = s * 60;
-var h = m * 60;
-var d = h * 24;
-var y = d * 365.25;
-
-/**
- * Parse or format the given `val`.
- *
- * Options:
- *
- *  - `long` verbose formatting [false]
- *
- * @param {String|Number} val
- * @param {Object} options
- * @return {String|Number}
- * @api public
- */
-
-module.exports = function(val, options){
-  options = options || {};
-  if ('string' == typeof val) return parse(val);
-  return options.long
-    ? long(val)
-    : short(val);
-};
-
-/**
- * Parse the given `str` and return milliseconds.
- *
- * @param {String} str
- * @return {Number}
- * @api private
- */
-
-function parse(str) {
-  str = '' + str;
-  if (str.length > 10000) return;
-  var match = /^((?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|years?|yrs?|y)?$/i.exec(str);
-  if (!match) return;
-  var n = parseFloat(match[1]);
-  var type = (match[2] || 'ms').toLowerCase();
-  switch (type) {
-    case 'years':
-    case 'year':
-    case 'yrs':
-    case 'yr':
-    case 'y':
-      return n * y;
-    case 'days':
-    case 'day':
-    case 'd':
-      return n * d;
-    case 'hours':
-    case 'hour':
-    case 'hrs':
-    case 'hr':
-    case 'h':
-      return n * h;
-    case 'minutes':
-    case 'minute':
-    case 'mins':
-    case 'min':
-    case 'm':
-      return n * m;
-    case 'seconds':
-    case 'second':
-    case 'secs':
-    case 'sec':
-    case 's':
-      return n * s;
-    case 'milliseconds':
-    case 'millisecond':
-    case 'msecs':
-    case 'msec':
-    case 'ms':
-      return n;
-  }
-}
-
-/**
- * Short format for `ms`.
- *
- * @param {Number} ms
- * @return {String}
- * @api private
- */
-
-function short(ms) {
-  if (ms >= d) return Math.round(ms / d) + 'd';
-  if (ms >= h) return Math.round(ms / h) + 'h';
-  if (ms >= m) return Math.round(ms / m) + 'm';
-  if (ms >= s) return Math.round(ms / s) + 's';
-  return ms + 'ms';
-}
-
-/**
- * Long format for `ms`.
- *
- * @param {Number} ms
- * @return {String}
- * @api private
- */
-
-function long(ms) {
-  return plural(ms, d, 'day')
-    || plural(ms, h, 'hour')
-    || plural(ms, m, 'minute')
-    || plural(ms, s, 'second')
-    || ms + ' ms';
-}
-
-/**
- * Pluralization helper.
- */
-
-function plural(ms, n, name) {
-  if (ms < n) return;
-  if (ms < n * 1.5) return Math.floor(ms / n) + ' ' + name;
-  return Math.ceil(ms / n) + ' ' + name + 's';
-}
-
 },{}],58:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
@@ -5624,7 +5624,7 @@ function Surge(options){
     _surgeEvents();
 	}
 
-	function emit(channel,name,data){
+	function emit(channel,name,message){
 		var data = {};
 
 		if(arguments.length<2){
@@ -5791,5 +5791,5 @@ Connection.prototype.inRoom = function(room){
 }
 
 module.exports = Surge;
-},{"sockjs-client":2}]},{},[64])(64)
+},{"sockjs-client":5}]},{},[64])(64)
 });

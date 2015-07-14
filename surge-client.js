@@ -71,7 +71,7 @@ function Surge(options){
     _surgeEvents();
 	}
 
-	function emit(channel,name,data){
+	function emit(channel,name,message){
 		var data = {};
 
 		if(arguments.length<2){
