@@ -36,7 +36,7 @@ function Surge(options){
 		connect 		: connect,
 		emit 				: emit,
 		connection  : connection,
-		socket  		: socket
+		channels 		: channels
 	};
 	return api;
 
@@ -128,22 +128,29 @@ function Surge(options){
 	};
 	//Private functions
 	function _surgeEvents(){
-    on('surge-joined-room',function(room){
+    on('surge-joined-room',function(data){
+    	var room = data.room;
+    	var subscribers = data.subscribers;
 	  	if(!connection.inRoom(room)){
 	  		connection.rooms.push(room);
 	  		channels[room].state = 'connected';
-
+	  		channels[room].subscribers = subscribers; 
 	  		//TODO: introduce private channels
 	  		channels[room].type = 'public';
 			}
 		});
-		on('surge-left-room',function(room){
+		on('surge-left-room',function(data){
 			if(connection.inRoom(room)){
 				connection.rooms.splice(connection.rooms.indexOf(room), 1);
-
 				channels[room].state = 'connected';
 				channels[room].on = null;
 			}
+		});
+		on('member-joined',function(data){
+			channels[data.room].subscribers = data.subscribers;
+		});
+		on('member-left',function(data){
+			channels[data.room].subscribers = data.subscribers;
 		});
 		on('open',function(data){
 			connection.socket_id = data;
