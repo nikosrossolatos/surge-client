@@ -8,7 +8,7 @@ I wanted to build a reliable WebSocket server that i could deploy very fast and 
 
 ##How to use
 
-__You dont have to create a socket-server !__
+__Server is down for maintenance__
 Surge-client connects automatically with a standalone [surge](https://github.com/spideynr/surge) server that i have already deployed. Alternatively, you can clone your own [surge-server](https://github.com/spideynr/surge) and change the ip that surge-client connects to.
 
 ```js
