@@ -3,7 +3,7 @@
 var SockJS = require('sockjs-client');
 
 var defs = {
-	server  		: 'http://83.212.100.253:8080',
+	server  		: 'http://159.8.152.168:8080',
 	debug  			: false 
 }
 
