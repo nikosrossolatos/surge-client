@@ -1,6 +1,6 @@
 #Surge-client
 
-Surge is a lightweight "framework" for SockJS, providing an API on top of it, adding extra features. If you come from socket.io like i did, you will find it easier to adjust with SockJS using Surge.
+Surge is a lightweight "framework" for SockJS, providing a Socket.io-like API on top of it, adding extra features out of the box.
 
 ##Inspiration
 
@@ -29,7 +29,7 @@ Surge-client connects automatically with a standalone [surge](https://github.com
 
 Just copy paste the above code and it will work out of the box.
 
-Surge-client is built using browserify and includes SockJS library. Minified it is 70kB.
+Surge-client is built using browserify and includes SockJS library. Minified it is 70kB (including SockJS).
 
 > You should not use the default surge-server for production purposes.
 
@@ -91,7 +91,7 @@ Returns the socket connection state. (connecting,disconnected,connected, attempt
 ##### `connection.rooms` 
 Returns all rooms the socket currently exists in.
 ##### `connection.inRoom(room)` 
-Returns true : false.
+Returns true if the socket exists in the room.
 
 ## Events 
 Event Name            | Description
