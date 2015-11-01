@@ -35,7 +35,13 @@ Surge-client is built using browserify and includes SockJS library. Minified it 
 
 ###Node.JS (server-side usage)
 
-> npm install --save surgejs-client
+Install the library
+
+```shell
+npm install --save surgejs-client
+```
+
+Example code
 
 ```js
   var Surge = require('surgejs-client');
@@ -111,10 +117,16 @@ Event Name            | Description
 For development purposes you can install [browserify](http://browserify.org/#install), [watchify](https://github.com/substack/watchify) and [uglify](https://github.com/mishoo/UglifyJS2) and use the npm task manager to build the dependancies.
 
 To build-watch everything for production purposes you can run :
-> npm run watch  
+
+```shell
+npm run watch  
+```
 
 You can also build the surge-client library and minify it using
-> npm run build
+
+```shell
+npm run build  
+```
 
 ##Roadmap
 - Authenticating connection requests using a token/secret hmac
