@@ -15,7 +15,7 @@ Surge-client connects automatically with a standalone [surge](https://github.com
 <script src="surge-client.min.js"></script>
 <script>
   
-  var surge = new Surge(); //You can also use new Surge('http://yourownserver.com:port');
+  var surge = new Surge(); //You can also use new Surge({host:'http://yourownserver.com:port'});
   
   var channel = surge.subscribe('room');
   
