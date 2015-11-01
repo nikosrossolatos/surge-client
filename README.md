@@ -34,9 +34,12 @@ Surge-client is built using browserify and includes SockJS library. Minified it 
 > You should not use the default surge-server for production purposes.
 
 ###Node.JS (server-side usage)
-Add the surge-client source to your server directory and use it like below.
+
+> npm install --save surgejs-client
+
 ```js
-  var surge = require('./path/to/lib/surge-client.js')();
+  var Surge = require('surgejs-client');
+  var surge = new Surge();
   surge.on('event', function() {});
   surge.emit('room','event',{});
   
