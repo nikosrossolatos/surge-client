@@ -129,6 +129,7 @@ npm run build
 ```
 
 ##Roadmap
+- Writting tests 
 - Authenticating connection requests using a token/secret hmac
 - Add authentication endpoint option for Authenticating users on the socket
 - Introduce Private - Preservance Channels after authenticating users
