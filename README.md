@@ -22,7 +22,7 @@ Surge-client connects automatically with a standalone [surge](https://github.com
   surge.on('event', function() {});
   surge.emit('room','event',{});
   
-  channel.unsubscribe('room');
+  surge.unsubscribe('room');
   
 </script>
 ```
@@ -50,7 +50,7 @@ Example code
   surge.emit('room','event',{});
   
   var channel = surge.subscribe('room');
-  channel.unsubscribe('room');
+  surge.unsubscribe('room');
 
 ```
 
