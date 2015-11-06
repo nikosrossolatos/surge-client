@@ -22,6 +22,8 @@ Surge-client connects automatically with a standalone [surge](https://github.com
   surge.on('event', function() {});
   surge.emit('room','event',{});
   
+  channel.unsubscribe();
+  //or
   surge.unsubscribe('room');
   
 </script>
@@ -71,8 +73,9 @@ When you call *new Surge()* you will get back a tiny API to interact with the so
 Creates an event handler for this event. Callback returns data received from the socket.
 
 ### `.emit('channel','event',data={})`
-Channel is optional. Emits an event with data for all sockets connected to the channel or global (if not channel is given).
-
+Channel is optional. Emits an event with data for all sockets connected to the channel (excluding self) or global (if not channel is given).
+### `.broadcast('channel','event',data={})`
+Channel is optional. Emits an event with data for all sockets connected to the channel (including self) or global (if not channel is given).
 ### `.subscribe('room')`
 Subscribes to a particular room. Also returns a new Channel object where you can also put .on event handlers ( still in production ).
 
