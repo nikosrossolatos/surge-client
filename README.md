@@ -15,14 +15,14 @@ Surge-client connects automatically with a standalone [surge](https://github.com
 <script src="surge-client.min.js"></script>
 <script>
   
-  var surge = new Surge(); //You can also use new Surge('http://yourownserver.com:port');
+  var surge = new Surge(); //You can also use new Surge({host:'http://yourownserver.com:port'});
   
   var channel = surge.subscribe('room');
   
   surge.on('event', function() {});
   surge.emit('room','event',{});
   
-  channel.unsubscribe('room');
+  surge.unsubscribe('room');
   
 </script>
 ```
@@ -50,11 +50,11 @@ Example code
   surge.emit('room','event',{});
   
   var channel = surge.subscribe('room');
-  channel.unsubscribe('room');
+  surge.unsubscribe('room');
 
 ```
 
-There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do a pull request and i will happily intergrate it!
+There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do fork it and i will happily intergrate it and reference it here!
 
 ##Options 
 Option             | Description
@@ -65,7 +65,7 @@ Option             | Description
 
 ##API
 
-When you call *new Surge()* you will get back a tiny API to interact with the socket. Calling multiple new Surge() object will not likely work since SockJS has a limitation as to how many WebSockets it can use.
+When you call *new Surge()* you will get back a tiny API to interact with the socket. Calling multiple new Surge() objects will not likely work since SockJS has a limitation as to how many WebSockets it can use.
 
 ### `.on('event',callback)`
 Creates an event handler for this event. Callback returns data received from the socket.
@@ -102,12 +102,11 @@ Event Name            | Description
 `surge-left-room`     | Calls when you succesfully leave a room, returns the `room` as string.
 
 ##Features
-> Well okay, why would i use this instead of building my own?
 
-- Well, for starters, its blazing fast to set something up for development purposes
+- Its blazing fast to set something up for development purposes
 - Auto-reconnecting already enabled (also reconnects to previously connected rooms) 
 - Smaller learning curve if you come from socket.io and you want to use some of its features heads on with the SockJS API
-- If the socket gets disconnected all further emits will go to a buffer. Upon reconnection the events will fire with the same series that they were called 
+- Event buffering. If the socket gets disconnected all further emits will go to a buffer. Upon reconnection the events will fire with the same series that they were called 
 - I will be maintaining this library since i will be using it on production
 - Open source! Want to change something? Fork it change it , do a pull request or don't and keep it for yourself
 - Check roadmap for more!
@@ -129,6 +128,7 @@ npm run build
 ```
 
 ##Roadmap
+- Writting tests 
 - Authenticating connection requests using a token/secret hmac
 - Add authentication endpoint option for Authenticating users on the socket
 - Introduce Private - Preservance Channels after authenticating users
