@@ -1,4 +1,263 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Surge = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+'use strict';
+
+var SockJS = require('sockjs-client');
+
+var defs = {
+	server  		: 'http://159.8.152.168:8080',
+	debug  			: false 
+}
+
+function Surge(options){
+
+	var events = {};
+	var channels = {};
+	var socket    = null;
+	var rconnect = true;
+	var recInterval = null;
+	var reconnecting = false;
+	var buffer = [];
+	
+	var o = options || {};
+
+	var url = o.host || defs.server;
+	var debug = o.debug || defs.debug;
+	var authEndpoint = o.authEndpoint;
+
+	var connection = new Connection();
+
+	//TODO: check if url is ip or not
+	connect();
+
+	var api = {
+		on 					: on,
+		subscribe 	: subscribe,
+		unsubscribe : unsubscribe,
+		disconnect 	: disconnect,
+		connect 		: connect,
+		emit 				: emit,
+		broadcast		: broadcast,
+		connection  : connection,
+		channels 		: channels
+	};
+	return api;
+
+
+ 
+	function on(name,callback){
+    if(!events[name]) {
+    	events[name] = [];
+    }
+    // Append event
+    events[name].push(callback);
+  };
+
+	function subscribe(room){
+		emit('surge-subscribe',{room:room});
+		var channel = new Channel(room);
+		channels[room] = channel;
+		return channel;
+	};
+	function unsubscribe(room){
+		emit('surge-unsubscribe',{room:room});
+	};
+	function disconnect(){
+		rconnect = false;
+		socket.close();
+		buffer = [];
+	};
+
+	function connect(){
+    socket = _connect();
+    _initSocket();
+    _surgeEvents();
+	}
+
+	function emit(channel,name,message){
+		_emit(arguments);
+	}
+
+	function broadcast(channel,name,message){
+		_emit(arguments,true);
+	}
+
+	function _emit(args,isBroadcast){
+		var data = {};
+
+		if(args.length<2){
+			console.error('emit needs at least 2 arguments');
+			return;
+		}
+
+		data.name = args[args.length-2];
+		data.message = args[args.length-1];
+		data.channel = args.length === 3 ? args[0] : undefined;
+		data.broadcast = isBroadcast;
+
+		if(socket){
+			if(debug===true){
+				console.log('Surge : Event sent : ' + JSON.stringify(data));
+			}
+			socket.emit(data);
+		}
+		else{
+			if(debug===true){
+				console.log('Surge : Event buffered : ' + JSON.stringify(data));
+			}
+			buffer.push(JSON.stringify(data));
+		}
+	};
+
+	function _connect(){
+		if(socket) {
+        // Get auto-reconnect and re-setup
+        connection.state = 'connecting';
+        var p = rconnect;
+        disconnect();
+        rconnect = p;
+    }
+		connection.state='connecting';
+		return new SockJS(url);
+	};
+
+	function _catchEvent(response) {
+		var name = response.name,
+		data = response.data;
+		var _events = events[name];
+		if(_events) {
+			var parsed = (typeof(data) === "object" && data !== null) ? data : data;
+			for(var i=0, l=_events.length; i<l; ++i) {
+				var fct = _events[i];
+				if(typeof(fct) === "function") {
+					// Defer call on setTimeout
+					(function(f) {
+					    setTimeout(function() {f(parsed);}, 0);
+					})(fct);
+				}
+			}
+		}
+	};
+	//Private functions
+	function _surgeEvents(){
+    on('surge-joined-room',function(data){
+    	var room = data.room;
+    	var subscribers = data.subscribers;
+	  	if(!connection.inRoom(room)){
+	  		connection.rooms.push(room);
+	  		channels[room].state = 'connected';
+	  		channels[room].subscribers = subscribers; 
+	  		//TODO: introduce private channels
+	  		channels[room].type = 'public';
+			}
+		});
+		on('surge-left-room',function(data){
+			var room = data.room;
+			if(connection.inRoom(room)){
+				connection.rooms.splice(connection.rooms.indexOf(room), 1);
+				channels[room].state = 'connected';
+				channels[room].on = null;
+			}
+		});
+		on('member-joined',function(data){
+			channels[data.room].subscribers = data.subscribers;
+		});
+		on('member-left',function(data){
+			channels[data.room].subscribers = data.subscribers;
+		});
+		on('open',function(data){
+			connection.socket_id = data;
+		});
+	}
+	function _initSocket(){
+		socket.onopen = function() {
+			connection.state = 'connected';
+			//In case of reconnection, resubscribe to rooms
+			if(reconnecting){
+				reconnecting = false;
+				reconnect();
+			}
+			else{
+				flushBuffer();
+			}
+		};
+		socket.onclose = function() {
+			socket = null;
+			_catchEvent({name:'close',data:{}});
+			if(rconnect){
+				connection.state='attempting reconnection';
+				reconnecting = true;
+				recInterval = setInterval(function() {
+					connect();
+					clearInterval(recInterval);
+				}, 2000);
+			}
+			else{
+				connection.state = 'disconnected';
+			}
+		};
+		socket.onmessage = function (e) {
+			if(!e.data){
+				console.info('no data received');
+				return;
+			}
+			var data = JSON.parse(e.data);
+			if(debug===true){
+				console.log('Surge : Event received : ' + e.data);
+			}
+			_catchEvent(data);
+		};
+		socket.emit = function (data){
+			if(connection.state==='connected'){
+				this.send(JSON.stringify(data));
+			}
+			else{
+				//enter to buffer
+				buffer.push(JSON.stringify(data));
+			}
+			
+		}
+		function reconnect(){
+			//resubscribe to rooms
+			for (var i = connection.rooms.length - 1; i >= 0; i--) {
+				subscribe(connection.rooms[i]);
+			};
+			//send all events that were buffered
+			flushBuffer();
+		}
+	}
+	function flushBuffer(){
+		if(buffer.length>0){
+			for (var i = 0; i < buffer.length; i++) {
+				console.log('sending message from buffer : '+buffer[i]);
+				socket.send(buffer[i]);
+			};
+			buffer = [];
+		}
+	}
+	function Channel(room){
+		this.room = room;
+		this.state = 'initializing';
+		this.type = 'initializing';//public,private
+		this.unsubscribe = function(){
+			emit('surge-unsubscribe',{room:this.room});
+		}
+	}
+};
+
+//	Connection class
+//	Keeps details regarding the connection state,rooms,.etc
+function Connection(){
+	this.rooms  = [];
+	this.state 	= 'not initialized';
+	this.socket_id;
+}
+
+Connection.prototype.inRoom = function(room){
+	return this.rooms.indexOf(room)>=0 ? true:false;
+}
+
+module.exports = Surge;
+},{"sockjs-client":3}],2:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -90,7 +349,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],2:[function(require,module,exports){
+},{}],3:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -104,7 +363,7 @@ if ('_sockjs_onload' in global) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./main":15,"./transport-list":17}],3:[function(require,module,exports){
+},{"./main":16,"./transport-list":18}],4:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -123,7 +382,7 @@ inherits(CloseEvent, Event);
 
 module.exports = CloseEvent;
 
-},{"./event":5,"inherits":58}],4:[function(require,module,exports){
+},{"./event":6,"inherits":59}],5:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -176,7 +435,7 @@ EventEmitter.prototype.removeListener = EventTarget.prototype.removeEventListene
 
 module.exports.EventEmitter = EventEmitter;
 
-},{"./eventtarget":6,"inherits":58}],5:[function(require,module,exports){
+},{"./eventtarget":7,"inherits":59}],6:[function(require,module,exports){
 'use strict';
 
 function Event(eventType) {
@@ -200,7 +459,7 @@ Event.BUBBLING_PHASE  = 3;
 
 module.exports = Event;
 
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 'use strict';
 
 /* Simplified implementation of DOM2 EventTarget.
@@ -262,7 +521,7 @@ EventTarget.prototype.dispatchEvent = function(event) {
 
 module.exports = EventTarget;
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -279,7 +538,7 @@ inherits(TransportMessageEvent, Event);
 
 module.exports = TransportMessageEvent;
 
-},{"./event":5,"inherits":58}],8:[function(require,module,exports){
+},{"./event":6,"inherits":59}],9:[function(require,module,exports){
 'use strict';
 
 var JSON3 = require('json3')
@@ -308,7 +567,7 @@ FacadeJS.prototype._close = function() {
 
 module.exports = FacadeJS;
 
-},{"./utils/iframe":48,"json3":59}],9:[function(require,module,exports){
+},{"./utils/iframe":49,"json3":60}],10:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -414,7 +673,7 @@ module.exports = function(SockJS, availableTransports) {
 };
 
 }).call(this,require('_process'))
-},{"./facade":8,"./info-iframe-receiver":11,"./location":14,"./utils/event":47,"./utils/iframe":48,"./utils/url":53,"_process":1,"debug":55,"json3":59}],10:[function(require,module,exports){
+},{"./facade":9,"./info-iframe-receiver":12,"./location":15,"./utils/event":48,"./utils/iframe":49,"./utils/url":54,"_process":2,"debug":56,"json3":60}],11:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -467,7 +726,7 @@ InfoAjax.prototype.close = function() {
 module.exports = InfoAjax;
 
 }).call(this,require('_process'))
-},{"./utils/object":50,"_process":1,"debug":55,"events":4,"inherits":58,"json3":59}],11:[function(require,module,exports){
+},{"./utils/object":51,"_process":2,"debug":56,"events":5,"inherits":59,"json3":60}],12:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -502,7 +761,7 @@ InfoReceiverIframe.prototype.close = function() {
 
 module.exports = InfoReceiverIframe;
 
-},{"./info-ajax":10,"./transport/sender/xhr-local":38,"events":4,"inherits":58,"json3":59}],12:[function(require,module,exports){
+},{"./info-ajax":11,"./transport/sender/xhr-local":39,"events":5,"inherits":59,"json3":60}],13:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -575,7 +834,7 @@ InfoIframe.prototype.close = function() {
 module.exports = InfoIframe;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./info-iframe-receiver":11,"./transport/iframe":23,"./utils/event":47,"_process":1,"debug":55,"events":4,"inherits":58,"json3":59}],13:[function(require,module,exports){
+},{"./info-iframe-receiver":12,"./transport/iframe":24,"./utils/event":48,"_process":2,"debug":56,"events":5,"inherits":59,"json3":60}],14:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -668,7 +927,7 @@ InfoReceiver.timeout = 8000;
 module.exports = InfoReceiver;
 
 }).call(this,require('_process'))
-},{"./info-ajax":10,"./info-iframe":12,"./transport/sender/xdr":35,"./transport/sender/xhr-cors":36,"./transport/sender/xhr-fake":37,"./transport/sender/xhr-local":38,"./utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],14:[function(require,module,exports){
+},{"./info-ajax":11,"./info-iframe":13,"./transport/sender/xdr":36,"./transport/sender/xhr-cors":37,"./transport/sender/xhr-fake":38,"./transport/sender/xhr-local":39,"./utils/url":54,"_process":2,"debug":56,"events":5,"inherits":59}],15:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -682,7 +941,7 @@ module.exports = global.location || {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -1055,7 +1314,7 @@ module.exports = function(availableTransports) {
 };
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./event/close":3,"./event/event":5,"./event/eventtarget":6,"./event/trans-message":7,"./iframe-bootstrap":9,"./info-receiver":13,"./location":14,"./shims":16,"./utils/browser":45,"./utils/escape":46,"./utils/event":47,"./utils/log":49,"./utils/object":50,"./utils/random":51,"./utils/transport":52,"./utils/url":53,"./version":54,"_process":1,"debug":55,"inherits":58,"json3":59,"url-parse":60}],16:[function(require,module,exports){
+},{"./event/close":4,"./event/event":6,"./event/eventtarget":7,"./event/trans-message":8,"./iframe-bootstrap":10,"./info-receiver":14,"./location":15,"./shims":17,"./utils/browser":46,"./utils/escape":47,"./utils/event":48,"./utils/log":50,"./utils/object":51,"./utils/random":52,"./utils/transport":53,"./utils/url":54,"./version":55,"_process":2,"debug":56,"inherits":59,"json3":60,"url-parse":61}],17:[function(require,module,exports){
 /* eslint-disable */
 /* jscs: disable */
 'use strict';
@@ -1530,7 +1789,7 @@ defineProperties(StringPrototype, {
     }
 }, hasNegativeSubstrBug);
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 'use strict';
 
 module.exports = [
@@ -1550,7 +1809,7 @@ module.exports = [
 , require('./transport/jsonp-polling')
 ];
 
-},{"./transport/eventsource":21,"./transport/htmlfile":22,"./transport/jsonp-polling":24,"./transport/lib/iframe-wrap":27,"./transport/websocket":39,"./transport/xdr-polling":40,"./transport/xdr-streaming":41,"./transport/xhr-polling":42,"./transport/xhr-streaming":43}],18:[function(require,module,exports){
+},{"./transport/eventsource":22,"./transport/htmlfile":23,"./transport/jsonp-polling":25,"./transport/lib/iframe-wrap":28,"./transport/websocket":40,"./transport/xdr-polling":41,"./transport/xdr-streaming":42,"./transport/xhr-polling":43,"./transport/xhr-streaming":44}],19:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -1739,17 +1998,17 @@ AbstractXHRObject.supportsCORS = cors;
 module.exports = AbstractXHRObject;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/event":47,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],19:[function(require,module,exports){
+},{"../../utils/event":48,"../../utils/url":54,"_process":2,"debug":56,"events":5,"inherits":59}],20:[function(require,module,exports){
 (function (global){
 module.exports = global.EventSource;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 (function (global){
 module.exports = global.WebSocket || global.MozWebSocket;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],21:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -1778,7 +2037,7 @@ EventSourceTransport.roundTrips = 2;
 
 module.exports = EventSourceTransport;
 
-},{"./lib/ajax-based":25,"./receiver/eventsource":30,"./sender/xhr-cors":36,"eventsource":19,"inherits":58}],22:[function(require,module,exports){
+},{"./lib/ajax-based":26,"./receiver/eventsource":31,"./sender/xhr-cors":37,"eventsource":20,"inherits":59}],23:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -1805,7 +2064,7 @@ HtmlFileTransport.roundTrips = 2;
 
 module.exports = HtmlFileTransport;
 
-},{"./lib/ajax-based":25,"./receiver/htmlfile":31,"./sender/xhr-local":38,"inherits":58}],23:[function(require,module,exports){
+},{"./lib/ajax-based":26,"./receiver/htmlfile":32,"./sender/xhr-local":39,"inherits":59}],24:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -1948,7 +2207,7 @@ IframeTransport.roundTrips = 2;
 module.exports = IframeTransport;
 
 }).call(this,require('_process'))
-},{"../utils/event":47,"../utils/iframe":48,"../utils/random":51,"../utils/url":53,"../version":54,"_process":1,"debug":55,"events":4,"inherits":58,"json3":59}],24:[function(require,module,exports){
+},{"../utils/event":48,"../utils/iframe":49,"../utils/random":52,"../utils/url":54,"../version":55,"_process":2,"debug":56,"events":5,"inherits":59,"json3":60}],25:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -1986,7 +2245,7 @@ JsonPTransport.needBody = true;
 module.exports = JsonPTransport;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./lib/sender-receiver":29,"./receiver/jsonp":32,"./sender/jsonp":34,"inherits":58}],25:[function(require,module,exports){
+},{"./lib/sender-receiver":30,"./receiver/jsonp":33,"./sender/jsonp":35,"inherits":59}],26:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2039,7 +2298,7 @@ inherits(AjaxBasedTransport, SenderReceiver);
 module.exports = AjaxBasedTransport;
 
 }).call(this,require('_process'))
-},{"../../utils/url":53,"./sender-receiver":29,"_process":1,"debug":55,"inherits":58}],26:[function(require,module,exports){
+},{"../../utils/url":54,"./sender-receiver":30,"_process":2,"debug":56,"inherits":59}],27:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2130,7 +2389,7 @@ BufferedSender.prototype.stop = function() {
 module.exports = BufferedSender;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"inherits":58}],27:[function(require,module,exports){
+},{"_process":2,"debug":56,"events":5,"inherits":59}],28:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -2167,7 +2426,7 @@ module.exports = function(transport) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/object":50,"../iframe":23,"inherits":58}],28:[function(require,module,exports){
+},{"../../utils/object":51,"../iframe":24,"inherits":59}],29:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2228,7 +2487,7 @@ Polling.prototype.abort = function() {
 module.exports = Polling;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"inherits":58}],29:[function(require,module,exports){
+},{"_process":2,"debug":56,"events":5,"inherits":59}],30:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2277,7 +2536,7 @@ SenderReceiver.prototype.close = function() {
 module.exports = SenderReceiver;
 
 }).call(this,require('_process'))
-},{"../../utils/url":53,"./buffered-sender":26,"./polling":28,"_process":1,"debug":55,"inherits":58}],30:[function(require,module,exports){
+},{"../../utils/url":54,"./buffered-sender":27,"./polling":29,"_process":2,"debug":56,"inherits":59}],31:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2344,7 +2603,7 @@ EventSourceReceiver.prototype._close = function(reason) {
 module.exports = EventSourceReceiver;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"eventsource":19,"inherits":58}],31:[function(require,module,exports){
+},{"_process":2,"debug":56,"events":5,"eventsource":20,"inherits":59}],32:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2433,7 +2692,7 @@ HtmlfileReceiver.enabled = HtmlfileReceiver.htmlfileEnabled || iframeUtils.ifram
 module.exports = HtmlfileReceiver;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/iframe":48,"../../utils/random":51,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],32:[function(require,module,exports){
+},{"../../utils/iframe":49,"../../utils/random":52,"../../utils/url":54,"_process":2,"debug":56,"events":5,"inherits":59}],33:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2616,7 +2875,7 @@ JsonpReceiver.prototype._createScript = function(url) {
 module.exports = JsonpReceiver;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/browser":45,"../../utils/iframe":48,"../../utils/random":51,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],33:[function(require,module,exports){
+},{"../../utils/browser":46,"../../utils/iframe":49,"../../utils/random":52,"../../utils/url":54,"_process":2,"debug":56,"events":5,"inherits":59}],34:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -2690,7 +2949,7 @@ XhrReceiver.prototype.abort = function() {
 module.exports = XhrReceiver;
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"events":4,"inherits":58}],34:[function(require,module,exports){
+},{"_process":2,"debug":56,"events":5,"inherits":59}],35:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2793,7 +3052,7 @@ module.exports = function(url, payload, callback) {
 };
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/random":51,"../../utils/url":53,"_process":1,"debug":55}],35:[function(require,module,exports){
+},{"../../utils/random":52,"../../utils/url":54,"_process":2,"debug":56}],36:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -2898,7 +3157,7 @@ XDRObject.enabled = !!(global.XDomainRequest && browser.hasDomain());
 module.exports = XDRObject;
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../../utils/browser":45,"../../utils/event":47,"../../utils/url":53,"_process":1,"debug":55,"events":4,"inherits":58}],36:[function(require,module,exports){
+},{"../../utils/browser":46,"../../utils/event":48,"../../utils/url":54,"_process":2,"debug":56,"events":5,"inherits":59}],37:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -2915,7 +3174,7 @@ XHRCorsObject.enabled = XhrDriver.enabled && XhrDriver.supportsCORS;
 
 module.exports = XHRCorsObject;
 
-},{"../driver/xhr":18,"inherits":58}],37:[function(require,module,exports){
+},{"../driver/xhr":19,"inherits":59}],38:[function(require,module,exports){
 'use strict';
 
 var EventEmitter = require('events').EventEmitter
@@ -2941,7 +3200,7 @@ XHRFake.timeout = 2000;
 
 module.exports = XHRFake;
 
-},{"events":4,"inherits":58}],38:[function(require,module,exports){
+},{"events":5,"inherits":59}],39:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -2960,7 +3219,7 @@ XHRLocalObject.enabled = XhrDriver.enabled;
 
 module.exports = XHRLocalObject;
 
-},{"../driver/xhr":18,"inherits":58}],39:[function(require,module,exports){
+},{"../driver/xhr":19,"inherits":59}],40:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3062,7 +3321,7 @@ WebSocketTransport.roundTrips = 2;
 module.exports = WebSocketTransport;
 
 }).call(this,require('_process'))
-},{"../utils/event":47,"../utils/url":53,"./driver/websocket":20,"_process":1,"debug":55,"events":4,"inherits":58}],40:[function(require,module,exports){
+},{"../utils/event":48,"../utils/url":54,"./driver/websocket":21,"_process":2,"debug":56,"events":5,"inherits":59}],41:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -3087,7 +3346,7 @@ XdrPollingTransport.roundTrips = 2; // preflight, ajax
 
 module.exports = XdrPollingTransport;
 
-},{"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xdr":35,"./xdr-streaming":41,"inherits":58}],41:[function(require,module,exports){
+},{"./lib/ajax-based":26,"./receiver/xhr":34,"./sender/xdr":36,"./xdr-streaming":42,"inherits":59}],42:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -3121,7 +3380,7 @@ XdrStreamingTransport.roundTrips = 2; // preflight, ajax
 
 module.exports = XdrStreamingTransport;
 
-},{"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xdr":35,"inherits":58}],42:[function(require,module,exports){
+},{"./lib/ajax-based":26,"./receiver/xhr":34,"./sender/xdr":36,"inherits":59}],43:[function(require,module,exports){
 'use strict';
 
 var inherits = require('inherits')
@@ -3156,7 +3415,7 @@ XhrPollingTransport.roundTrips = 2; // preflight, ajax
 
 module.exports = XhrPollingTransport;
 
-},{"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xhr-cors":36,"./sender/xhr-local":38,"inherits":58}],43:[function(require,module,exports){
+},{"./lib/ajax-based":26,"./receiver/xhr":34,"./sender/xhr-cors":37,"./sender/xhr-local":39,"inherits":59}],44:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3201,7 +3460,7 @@ XhrStreamingTransport.needBody = !!global.document;
 module.exports = XhrStreamingTransport;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../utils/browser":45,"./lib/ajax-based":25,"./receiver/xhr":33,"./sender/xhr-cors":36,"./sender/xhr-local":38,"inherits":58}],44:[function(require,module,exports){
+},{"../utils/browser":46,"./lib/ajax-based":26,"./receiver/xhr":34,"./sender/xhr-cors":37,"./sender/xhr-local":39,"inherits":59}],45:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3222,7 +3481,7 @@ if (global.crypto && global.crypto.getRandomValues) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3253,7 +3512,7 @@ module.exports = {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict';
 
 var JSON3 = require('json3');
@@ -3304,7 +3563,7 @@ module.exports = {
   }
 };
 
-},{"json3":59}],47:[function(require,module,exports){
+},{"json3":60}],48:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3373,7 +3632,7 @@ var unloadTriggered = function() {
 module.exports.attachEvent('unload', unloadTriggered);
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./random":51}],48:[function(require,module,exports){
+},{"./random":52}],49:[function(require,module,exports){
 (function (process,global){
 'use strict';
 
@@ -3558,7 +3817,7 @@ if (global.document) {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./browser":45,"./event":47,"_process":1,"debug":55,"json3":59}],49:[function(require,module,exports){
+},{"./browser":46,"./event":48,"_process":2,"debug":56,"json3":60}],50:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -3573,7 +3832,7 @@ var logObject = {};
 module.exports = logObject;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -3599,7 +3858,7 @@ module.exports = {
   }
 };
 
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 'use strict';
 
 /* global crypto:true */
@@ -3630,7 +3889,7 @@ module.exports = {
   }
 };
 
-},{"crypto":44}],52:[function(require,module,exports){
+},{"crypto":45}],53:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3684,7 +3943,7 @@ module.exports = function(availableTransports) {
 };
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55}],53:[function(require,module,exports){
+},{"_process":2,"debug":56}],54:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3735,9 +3994,9 @@ module.exports = {
 };
 
 }).call(this,require('_process'))
-},{"_process":1,"debug":55,"url-parse":60}],54:[function(require,module,exports){
+},{"_process":2,"debug":56,"url-parse":61}],55:[function(require,module,exports){
 module.exports = '1.0.0';
-},{}],55:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 
 /**
  * This is the web browser implementation of `debug()`.
@@ -3907,7 +4166,7 @@ function localstorage(){
   } catch (e) {}
 }
 
-},{"./debug":56}],56:[function(require,module,exports){
+},{"./debug":57}],57:[function(require,module,exports){
 
 /**
  * This is the common logic for both the Node.js and web browser
@@ -4106,7 +4365,7 @@ function coerce(val) {
   return val;
 }
 
-},{"ms":57}],57:[function(require,module,exports){
+},{"ms":58}],58:[function(require,module,exports){
 /**
  * Helpers.
  */
@@ -4233,7 +4492,7 @@ function plural(ms, n, name) {
   return Math.ceil(ms / n) + ' ' + name + 's';
 }
 
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -4258,7 +4517,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],59:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 (function (global){
 /*! JSON v3.3.2 | http://bestiejs.github.io/json3 | Copyright 2012-2014, Kit Cambridge | http://kit.mit-license.org */
 ;(function () {
@@ -5164,7 +5423,7 @@ if (typeof Object.create === 'function') {
 }).call(this);
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],60:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 'use strict';
 
 var required = require('requires-port')
@@ -5398,7 +5657,7 @@ URL.qs = qs;
 URL.location = lolcation;
 module.exports = URL;
 
-},{"./lolcation":61,"querystringify":62,"requires-port":63}],61:[function(require,module,exports){
+},{"./lolcation":62,"querystringify":63,"requires-port":64}],62:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -5447,7 +5706,7 @@ module.exports = function lolcation(loc) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./":60}],62:[function(require,module,exports){
+},{"./":61}],63:[function(require,module,exports){
 'use strict';
 
 var has = Object.prototype.hasOwnProperty;
@@ -5510,7 +5769,7 @@ function querystringify(obj, prefix) {
 exports.stringify = querystringify;
 exports.parse = querystring;
 
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 'use strict';
 
 /**
@@ -5550,253 +5809,5 @@ module.exports = function required(port, protocol) {
   return port !== 0;
 };
 
-},{}],64:[function(require,module,exports){
-'use strict';
-
-var SockJS = require('sockjs-client');
-
-var defs = {
-	server  		: 'http://159.8.152.168:8080',
-	debug  			: false 
-}
-
-function Surge(options){
-
-	var events = {};
-	var channels = {};
-	var socket    = null;
-	var rconnect = true;
-	var recInterval = null;
-	var reconnecting = false;
-	var buffer = [];
-	
-	var o = options || {};
-
-	var url = o.host || defs.server;
-	var debug = o.debug || defs.debug;
-	var authEndpoint = o.authEndpoint;
-
-	var connection = new Connection();
-
-	//TODO: check if url is ip or not
-	connect();
-
-	var api = {
-		on 					: on,
-		subscribe 	: subscribe,
-		unsubscribe : unsubscribe,
-		disconnect 	: disconnect,
-		connect 		: connect,
-		emit 				: emit,
-		connection  : connection,
-		channels 		: channels
-	};
-	return api;
-
-
- 
-	function on(name,callback){
-    if(!events[name]) {
-    	events[name] = [];
-    }
-    // Append event
-    events[name].push(callback);
-  };
-
-	function subscribe(room){
-		emit('surge-subscribe',{room:room});
-		var channel = new Channel(room);
-		channels[room] = channel;
-		return channel;
-	};
-	function unsubscribe(room){
-		emit('surge-unsubscribe',{room:room});
-	};
-	function disconnect(){
-		rconnect = false;
-		socket.close();
-		buffer = [];
-	};
-
-	function connect(){
-    socket = _connect();
-    _initSocket();
-    _surgeEvents();
-	}
-
-	function emit(channel,name,message){
-		var data = {};
-
-		if(arguments.length<2){
-			console.error('emit needs at least 2 arguments');
-			return;
-		}
-
-		data.name = arguments[arguments.length-2];
-		data.message = arguments[arguments.length-1];
-		data.channel = arguments.length === 3 ? arguments[0] : undefined;
-
-		if(socket){
-			if(debug===true){
-				console.log('Surge : Event sent : ' + JSON.stringify(data));
-			}
-			socket.emit(data);
-		}
-		else{
-			if(debug===true){
-				console.log('Surge : Event buffered : ' + JSON.stringify(data));
-			}
-			buffer.push(JSON.stringify(data));
-		}
-	};
-
-	function _connect(){
-		if(socket) {
-        // Get auto-reconnect and re-setup
-        connection.state = 'connecting';
-        var p = rconnect;
-        disconnect();
-        rconnect = p;
-    }
-		connection.state='connecting';
-		return new SockJS(url);
-	};
-
-	function _catchEvent(response) {
-		var name = response.name,
-		data = response.data;
-		var _events = events[name];
-		if(_events) {
-			var parsed = (typeof(data) === "object" && data !== null) ? data : data;
-			for(var i=0, l=_events.length; i<l; ++i) {
-				var fct = _events[i];
-				if(typeof(fct) === "function") {
-					// Defer call on setTimeout
-					(function(f) {
-					    setTimeout(function() {f(parsed);}, 0);
-					})(fct);
-				}
-			}
-		}
-	};
-	//Private functions
-	function _surgeEvents(){
-    on('surge-joined-room',function(data){
-    	var room = data.room;
-    	var subscribers = data.subscribers;
-	  	if(!connection.inRoom(room)){
-	  		connection.rooms.push(room);
-	  		channels[room].state = 'connected';
-	  		channels[room].subscribers = subscribers; 
-	  		//TODO: introduce private channels
-	  		channels[room].type = 'public';
-			}
-		});
-		on('surge-left-room',function(data){
-			if(connection.inRoom(room)){
-				connection.rooms.splice(connection.rooms.indexOf(room), 1);
-				channels[room].state = 'connected';
-				channels[room].on = null;
-			}
-		});
-		on('member-joined',function(data){
-			channels[data.room].subscribers = data.subscribers;
-		});
-		on('member-left',function(data){
-			channels[data.room].subscribers = data.subscribers;
-		});
-		on('open',function(data){
-			connection.socket_id = data;
-		});
-	}
-	function _initSocket(){
-		socket.onopen = function() {
-			connection.state = 'connected';
-			//In case of reconnection, resubscribe to rooms
-			if(reconnecting){
-				reconnecting = false;
-				reconnect();
-			}
-			else{
-				flushBuffer();
-			}
-		};
-		socket.onclose = function() {
-			socket = null;
-			_catchEvent({name:'close',data:{}});
-			if(rconnect){
-				connection.state='attempting reconnection';
-				reconnecting = true;
-				recInterval = setInterval(function() {
-					connect();
-					clearInterval(recInterval);
-				}, 2000);
-			}
-			else{
-				connection.state = 'disconnected';
-			}
-		};
-		socket.onmessage = function (e) {
-			if(!e.data){
-				console.info('no data received');
-				return;
-			}
-			var data = JSON.parse(e.data);
-			if(debug===true){
-				console.log('Surge : Event received : ' + e.data);
-			}
-			_catchEvent(data);
-		};
-		socket.emit = function (data){
-			if(connection.state==='connected'){
-				this.send(JSON.stringify(data));
-			}
-			else{
-				//enter to buffer
-				buffer.push(JSON.stringify(data));
-			}
-			
-		}
-		function reconnect(){
-			//resubscribe to rooms
-			for (var i = connection.rooms.length - 1; i >= 0; i--) {
-				subscribe(connection.rooms[i]);
-			};
-			//send all events that were buffered
-			flushBuffer();
-		}
-	}
-	function flushBuffer(){
-		if(buffer.length>0){
-			for (var i = 0; i < buffer.length; i++) {
-				console.log('sending message from buffer : '+buffer[i]);
-				socket.send(buffer[i]);
-			};
-			buffer = [];
-		}
-	}
-	function Channel(room){
-		this.room = room;
-		this.state = 'initializing';
-		this.type = 'initializing';//public,private
-		this.unsubscribe = function(){
-			emit('surge-unsubscribe',{room:this.room});
-		}
-	}
-};
-
-//	Connection class
-//	Keeps details regarding the connection state,rooms,.etc
-function Connection(){
-	this.rooms  = [];
-	this.state 	= 'not initialized';
-	this.socket_id;
-}
-
-Connection.prototype.inRoom = function(room){
-	return this.rooms.indexOf(room)>=0 ? true:false;
-}
-
-module.exports = Surge;
-},{"sockjs-client":2}]},{},[64])(64)
+},{}]},{},[1])(1)
 });

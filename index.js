@@ -35,6 +35,7 @@ function Surge(options){
 		disconnect 	: disconnect,
 		connect 		: connect,
 		emit 				: emit,
+		broadcast		: broadcast,
 		connection  : connection,
 		channels 		: channels
 	};
@@ -72,16 +73,25 @@ function Surge(options){
 	}
 
 	function emit(channel,name,message){
+		_emit(arguments);
+	}
+
+	function broadcast(channel,name,message){
+		_emit(arguments,true);
+	}
+
+	function _emit(args,isBroadcast){
 		var data = {};
 
-		if(arguments.length<2){
+		if(args.length<2){
 			console.error('emit needs at least 2 arguments');
 			return;
 		}
 
-		data.name = arguments[arguments.length-2];
-		data.message = arguments[arguments.length-1];
-		data.channel = arguments.length === 3 ? arguments[0] : undefined;
+		data.name = args[args.length-2];
+		data.message = args[args.length-1];
+		data.channel = args.length === 3 ? args[0] : undefined;
+		data.broadcast = isBroadcast;
 
 		if(socket){
 			if(debug===true){
@@ -140,6 +150,7 @@ function Surge(options){
 			}
 		});
 		on('surge-left-room',function(data){
+			var room = data.room;
 			if(connection.inRoom(room)){
 				connection.rooms.splice(connection.rooms.indexOf(room), 1);
 				channels[room].state = 'connected';
