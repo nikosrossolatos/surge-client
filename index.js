@@ -7,7 +7,7 @@ var defs = {
 	debug  			: false 
 }
 
-function Surge(options){
+module.exports = function Surge(options){
 
 	var events = {};
 	var channels = {};
@@ -24,6 +24,7 @@ function Surge(options){
 	var authEndpoint = o.authEndpoint;
 
 	var connection = new Connection();
+	connection.host = url;
 
 	//TODO: check if url is ip or not
 	connect();
@@ -55,7 +56,7 @@ function Surge(options){
 		emit('surge-subscribe',{room:room});
 		var channel = new Channel(room);
 		channels[room] = channel;
-		return channel;
+		return channels[room];
 	};
 	function unsubscribe(room){
 		emit('surge-unsubscribe',{room:room});
@@ -82,7 +83,6 @@ function Surge(options){
 
 	function _emit(args,isBroadcast){
 		var data = {};
-
 		if(args.length<2){
 			console.error('emit needs at least 2 arguments');
 			return;
@@ -94,9 +94,6 @@ function Surge(options){
 		data.broadcast = isBroadcast;
 
 		if(socket){
-			if(debug===true){
-				console.log('Surge : Event sent : ' + JSON.stringify(data));
-			}
 			socket.emit(data);
 		}
 		else{
@@ -153,8 +150,11 @@ function Surge(options){
 			var room = data.room;
 			if(connection.inRoom(room)){
 				connection.rooms.splice(connection.rooms.indexOf(room), 1);
-				channels[room].state = 'connected';
-				channels[room].on = null;
+				channels[room].state='disconnected';
+				channels[room].unsubscribe = null;
+				channels[room].broadcast = null;
+				channels[room].emit = null;
+				channels[room].subscribers = null;
 			}
 		});
 		on('member-joined',function(data){
@@ -207,9 +207,15 @@ function Surge(options){
 		};
 		socket.emit = function (data){
 			if(connection.state==='connected'){
+				if(debug===true){
+					console.log('Surge : Event sent : ' + JSON.stringify(data));
+				}
 				this.send(JSON.stringify(data));
 			}
 			else{
+				if(debug===true){
+					console.log('Surge : Event buffered : ' + JSON.stringify(data));
+				}
 				//enter to buffer
 				buffer.push(JSON.stringify(data));
 			}
@@ -227,7 +233,9 @@ function Surge(options){
 	function flushBuffer(){
 		if(buffer.length>0){
 			for (var i = 0; i < buffer.length; i++) {
-				console.log('sending message from buffer : '+buffer[i]);
+				if(debug===true){
+					console.log('sending message from buffer : '+buffer[i]);
+				}
 				socket.send(buffer[i]);
 			};
 			buffer = [];
@@ -240,12 +248,19 @@ function Surge(options){
 		this.unsubscribe = function(){
 			emit('surge-unsubscribe',{room:this.room});
 		}
+		this.emit = function(name,message){
+			emit(this.room,name,message);
+		}
+		this.broadcast = function(name,message){
+			broadcast(this.room,name,message);
+		}
 	}
 };
 
 //	Connection class
 //	Keeps details regarding the connection state,rooms,.etc
 function Connection(){
+	this.host  	= '';
 	this.rooms  = [];
 	this.state 	= 'not initialized';
 	this.socket_id;
@@ -254,5 +269,3 @@ function Connection(){
 Connection.prototype.inRoom = function(room){
 	return this.rooms.indexOf(room)>=0 ? true:false;
 }
-
-module.exports = Surge;
