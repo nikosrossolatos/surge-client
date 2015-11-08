@@ -31,6 +31,11 @@ Surge-client connects automatically with a standalone [surge](https://github.com
 
 Just copy paste the above code and it will work out of the box.
 
+```js
+  var surge = new Surge()
+```
+will open the socket connection and configure everything you need to start trying it out.
+
 Surge-client is built using browserify and includes SockJS library. Minified it is 70kB (including SockJS).
 
 > You should not use the default surge-server for production purposes.
@@ -56,6 +61,7 @@ Example code
 
 ```
 
+
 There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do fork it and i will happily intergrate it and reference it here!
 
 ##Options 
@@ -69,25 +75,25 @@ Option             | Description
 
 When you call *new Surge()* you will get back a tiny API to interact with the socket. Calling multiple new Surge() objects will not likely work since SockJS has a limitation as to how many WebSockets it can use.
 
-### `.on('event',callback)`
+### `surge.on('event',callback)`
 Creates an event handler for this event. Callback returns data received from the socket.
 
-### `.emit('channel','event',data={})`
+### `surge.emit('channel','event',data={})`
 Channel is optional. Emits an event with data for all sockets connected to the channel (excluding self) or global (if not channel is given).
-### `.broadcast('channel','event',data={})`
+### `surge.broadcast('channel','event',data={})`
 Channel is optional. Emits an event with data for all sockets connected to the channel (including self) or global (if not channel is given).
-### `.subscribe('room')`
+### `surge.subscribe('room')`
 Subscribes to a particular room. Also returns a new Channel object where you can also put .on event handlers ( still in production ).
 
-### `.unsubscribe('room')`
+### `surge.unsubscribe('room')`
 Unsubscribe from room.
 
-### `.disconnect()`
+### `surge.disconnect()`
 Disconnect socket .
-### `.connect()`
+### `surge.connect()`
 Connect socket with server. If there is already an open connection it will close it and connect again.
 
-### `.connection`
+### `surge.connection`
 Connection is an object containing: 
 #####`connection.state` 
 Returns the socket connection state. (connecting,disconnected,connected, attempting reconnection).
@@ -95,6 +101,27 @@ Returns the socket connection state. (connecting,disconnected,connected, attempt
 Returns all rooms the socket currently exists in.
 ##### `connection.inRoom(room)` 
 Returns true if the socket exists in the room.
+
+### Channel
+```js
+var channel = surge.subscribe('room');
+```
+Subscribing to a channel returns a channel object with the properties shown below
+
+#### `channel.room`
+Returns the room name
+#### `channel.state`
+Returns the channel connection state (initializing,connected,disconnected)
+#### `channel.type`
+Returns type (public,private)
+#### `channel.unsubscribe`
+Returns a function. Unsubscribes from the channel.
+#### `channel.emit`
+Returns a function. Emits to channel
+#### `channel.broadcast`
+Returns a function. Broadcasts to channel
+
+
 
 ## Events 
 Event Name            | Description
@@ -129,9 +156,13 @@ You can also build the surge-client library and minify it using
 ```shell
 npm run build  
 ```
+##Test
+
+```shell
+npm test
+```
 
 ##Roadmap
-- Writting tests 
 - Authenticating connection requests using a token/secret hmac
 - Add authentication endpoint option for Authenticating users on the socket
 - Introduce Private - Preservance Channels after authenticating users
