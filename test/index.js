@@ -1,7 +1,7 @@
 var test = require('tape');
 
 var Surge = require('../index');
-var host = 'http://192.168.0.6:8080';
+var host = 'http://137.135.130.124:8080';
 
 
 test('Api',function (t){
