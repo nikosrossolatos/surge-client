@@ -1,3 +1,7 @@
+### 1.1.2
+
+- Changed default host
+
 ### 1.1.1
 
 - Minor bug fixes when logging buffer
