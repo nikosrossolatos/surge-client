@@ -3,7 +3,7 @@
 var SockJS = require('sockjs-client');
 
 var defs = {
-	server  		: 'http://159.8.152.168:8080',
+	server  		: 'http://surge-server.cloudapp.net:8080',
 	debug  			: false 
 }
 

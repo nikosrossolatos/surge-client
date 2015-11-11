@@ -4,7 +4,7 @@
 var SockJS = require('sockjs-client');
 
 var defs = {
-	server  		: 'http://159.8.152.168:8080',
+	server  		: 'http://surge-server.cloudapp.net:8080',
 	debug  			: false 
 }
 
@@ -303,7 +303,9 @@ function drainQueue() {
         currentQueue = queue;
         queue = [];
         while (++queueIndex < len) {
-            currentQueue[queueIndex].run();
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
         }
         queueIndex = -1;
         len = queue.length;
@@ -355,7 +357,6 @@ process.binding = function (name) {
     throw new Error('process.binding is not supported');
 };
 
-// TODO(shtylman)
 process.cwd = function () { return '/' };
 process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
@@ -749,11 +750,11 @@ var inherits = require('inherits')
   , InfoAjax = require('./info-ajax')
   ;
 
-function InfoReceiverIframe(transUrl, baseUrl) {
+function InfoReceiverIframe(transUrl) {
   var self = this;
   EventEmitter.call(this);
 
-  this.ir = new InfoAjax(baseUrl, XHRLocalObject);
+  this.ir = new InfoAjax(transUrl, XHRLocalObject);
   this.ir.once('finish', function(info, rtt) {
     self.ir = null;
     self.emit('message', JSON3.stringify([info, rtt]));
@@ -791,12 +792,12 @@ if (process.env.NODE_ENV !== 'production') {
   debug = require('debug')('sockjs-client:info-iframe');
 }
 
-function InfoIframe(url) {
+function InfoIframe(baseUrl, url) {
   var self = this;
   EventEmitter.call(this);
 
   var go = function() {
-    var ifr = self.ifr = new IframeTransport(InfoReceiverIframe.transportName, url, url);
+    var ifr = self.ifr = new IframeTransport(InfoReceiverIframe.transportName, url, baseUrl);
 
     ifr.once('message', function(msg) {
       if (msg) {
@@ -881,7 +882,7 @@ inherits(InfoReceiver, EventEmitter);
 
 // TODO this is currently ignoring the list of available transports and the whitelist
 
-InfoReceiver._getReceiver = function(url, urlInfo) {
+InfoReceiver._getReceiver = function(baseUrl, url, urlInfo) {
   // determine method of CORS support (if needed)
   if (urlInfo.sameOrigin) {
     return new InfoAjax(url, XHRLocal);
@@ -893,7 +894,7 @@ InfoReceiver._getReceiver = function(url, urlInfo) {
     return new InfoAjax(url, XDR);
   }
   if (InfoIframe.enabled()) {
-    return new InfoIframe(url);
+    return new InfoIframe(baseUrl, url);
   }
   return new InfoAjax(url, XHRFake);
 };
@@ -904,7 +905,7 @@ InfoReceiver.prototype.doXhr = function(baseUrl, urlInfo) {
     ;
   debug('doXhr', url);
 
-  this.xo = InfoReceiver._getReceiver(url, urlInfo);
+  this.xo = InfoReceiver._getReceiver(baseUrl, url, urlInfo);
 
   this.timeoutRef = setTimeout(function() {
     debug('timeout');
@@ -1008,6 +1009,18 @@ function SockJS(url, protocols, options) {
     log.warn("'protocols_whitelist' is DEPRECATED. Use 'transports' instead.");
   }
   this._transportsWhitelist = options.transports;
+
+  var sessionId = options.sessionId || 8;
+  if (typeof sessionId === 'function') {
+    this._generateSessionId = sessionId;
+  } else if (typeof sessionId === 'number') {
+    this._generateSessionId = function() {
+      return random.string(sessionId);
+    };
+  } else {
+    throw new TypeError("If sessionId is used in the options, it needs to be a number or a function.");
+  }
+
   this._server = options.server || random.numberString(1000);
 
   // Step 1 of WS spec - parse and validate the url. Issue #8
@@ -1160,7 +1173,7 @@ SockJS.prototype._connect = function() {
     this._transportTimeoutId = setTimeout(this._transportTimeout.bind(this), timeoutMs);
     debug('using timeout', timeoutMs);
 
-    var transportUrl = urlUtils.addPath(this._transUrl, '/' + this._server + '/' + random.string(8));
+    var transportUrl = urlUtils.addPath(this._transUrl, '/' + this._server + '/' + this._generateSessionId());
     debug('transport url', transportUrl);
     var transportObj = new Transport(transportUrl, this._transUrl);
     transportObj.on('message', this._transportMessage.bind(this));
@@ -3584,6 +3597,8 @@ var random = require('./random');
 
 var onUnload = {}
   , afterUnload = false
+    // detect google chrome packaged apps because they don't allow the 'unload' event
+  , isChromePackagedApp = global.chrome && global.chrome.app && global.chrome.app.runtime
   ;
 
 module.exports = {
@@ -3610,6 +3625,10 @@ module.exports = {
   }
 
 , unloadAdd: function(listener) {
+    if (isChromePackagedApp) {
+      return null;
+    }
+
     var ref = random.string(8);
     onUnload[ref] = listener;
     if (afterUnload) {
@@ -3642,7 +3661,9 @@ var unloadTriggered = function() {
 
 // 'unload' alone is not reliable in opera within an iframe, but we
 // can't use `beforeunload` as IE fires it on javascript: links.
-module.exports.attachEvent('unload', unloadTriggered);
+if (!isChromePackagedApp) {
+  module.exports.attachEvent('unload', unloadTriggered);
+}
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 },{"./random":52}],49:[function(require,module,exports){
@@ -3721,11 +3742,11 @@ module.exports = {
       try {
         // When the iframe is not loaded, IE raises an exception
         // on 'contentWindow'.
-        if (iframe && iframe.contentWindow) {
-          setTimeout(function() {
+        setTimeout(function() {
+          if (iframe && iframe.contentWindow) {
             iframe.contentWindow.postMessage(msg, origin);
-          }, 0);
-        }
+          }
+        }, 0);
       } catch (x) {}
     };
 
@@ -3787,11 +3808,11 @@ module.exports = {
       try {
         // When the iframe is not loaded, IE raises an exception
         // on 'contentWindow'.
-        if (iframe && iframe.contentWindow) {
-          setTimeout(function() {
-            iframe.contentWindow.postMessage(msg, origin);
-          }, 0);
-        }
+        setTimeout(function() {
+          if (iframe && iframe.contentWindow) {
+              iframe.contentWindow.postMessage(msg, origin);
+          }
+        }, 0);
       } catch (x) {}
     };
 
@@ -4008,7 +4029,7 @@ module.exports = {
 
 }).call(this,require('_process'))
 },{"_process":2,"debug":56,"url-parse":61}],55:[function(require,module,exports){
-module.exports = '1.0.0';
+module.exports = '1.0.3';
 },{}],56:[function(require,module,exports){
 
 /**
@@ -5650,12 +5671,8 @@ URL.prototype.toString = function toString(stringify) {
 
   result += url.pathname;
 
-  if (url.query) {
-    if ('object' === typeof url.query) query = stringify(url.query);
-    else query = url.query;
-
-    result += (query.charAt(0) === '?' ? '' : '?') + query;
-  }
+  query = 'object' === typeof url.query ? stringify(url.query) : url.query;
+  if (query) result += '?' !== query.charAt(0) ? '?'+ query : query;
 
   if (url.hash) result += url.hash;
 
@@ -5810,7 +5827,7 @@ module.exports = function required(port, protocol) {
     return port !== 443;
 
     case 'ftp':
-    return port !== 22;
+    return port !== 21;
 
     case 'gopher':
     return port !== 70;
