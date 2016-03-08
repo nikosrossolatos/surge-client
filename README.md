@@ -1,4 +1,5 @@
 #Surge-client
+[![Build Status](https://travis-ci.org/spideynr/surge-client.svg?branch=master)](https://travis-ci.org/spideynr/surge-client) [![Coverage Status](https://coveralls.io/repos/github/spideynr/surge-client/badge.svg?branch=master)](https://coveralls.io/github/spideynr/surge-client?branch=master)
 
 Surge is a lightweight "framework" for SockJS, providing a Socket.io-like API on top of it, adding extra features out of the box.
 
