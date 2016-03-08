@@ -1,6 +1,6 @@
 {
   "name": "surgejs-client",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "SurgeJS is a lightweight \"framework\" for SockJS, providing a socket.io like API on top of it, adding extra features.",
   "main": "index.js",
   "scripts": {
