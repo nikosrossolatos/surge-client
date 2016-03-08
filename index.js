@@ -61,8 +61,8 @@ module.exports = function Surge(options){
 	function unsubscribe(room){
 		emit('surge-unsubscribe',{room:room});
 	};
-	function disconnect(){
-		rconnect = false;
+	function disconnect(rc){
+		rconnect = rc || false;
 		socket.close();
 		buffer = [];
 	};
@@ -74,18 +74,18 @@ module.exports = function Surge(options){
 	}
 
 	function emit(channel,name,message){
-		_emit(arguments);
+		return _emit(arguments);
 	}
 
 	function broadcast(channel,name,message){
-		_emit(arguments,true);
+		return _emit(arguments,true);
 	}
 
 	function _emit(args,isBroadcast){
 		var data = {};
 		if(args.length<2){
 			console.error('emit needs at least 2 arguments');
-			return;
+			return false;
 		}
 
 		data.name = args[args.length-2];
@@ -97,20 +97,15 @@ module.exports = function Surge(options){
 			socket.emit(data);
 		}
 		else{
-			if(debug===true){
-				console.log('Surge : Event buffered : ' + JSON.stringify(data));
-			}
+			logMessage('Surge : Event buffered : ' + JSON.stringify(data));
 			buffer.push(JSON.stringify(data));
 		}
 	};
 
 	function _connect(){
 		if(socket) {
-        // Get auto-reconnect and re-setup
-        connection.state = 'connecting';
-        var p = rconnect;
-        disconnect();
-        rconnect = p;
+      _catchEvent({name:'surge-error',data:'Socket already connected'});
+      return socket;
     }
 		connection.state='connecting';
 		return new SockJS(url);
@@ -195,28 +190,17 @@ module.exports = function Surge(options){
 			}
 		};
 		socket.onmessage = function (e) {
-			if(!e.data){
-				console.info('no data received');
-				return;
-			}
 			var data = JSON.parse(e.data);
-			if(debug===true){
-				console.log('Surge : Event received : ' + e.data);
-			}
+			logMessage('Surge : Event received : ' + e.data);
 			_catchEvent(data);
 		};
 		socket.emit = function (data){
 			if(connection.state==='connected'){
-				if(debug===true){
-					console.log('Surge : Event sent : ' + JSON.stringify(data));
-				}
+				logMessage('Surge : Event sent : ' + JSON.stringify(data));
 				this.send(JSON.stringify(data));
 			}
 			else{
-				if(debug===true){
-					console.log('Surge : Event buffered : ' + JSON.stringify(data));
-				}
-				//enter to buffer
+				logMessage('Surge : Event buffered : ' + JSON.stringify(data));
 				buffer.push(JSON.stringify(data));
 			}
 			
@@ -233,9 +217,7 @@ module.exports = function Surge(options){
 	function flushBuffer(){
 		if(buffer.length>0){
 			for (var i = 0; i < buffer.length; i++) {
-				if(debug===true){
-					console.log('sending message from buffer : '+buffer[i]);
-				}
+				logMessage('sending message from buffer : '+buffer[i]);
 				socket.send(buffer[i]);
 			};
 			buffer = [];
@@ -254,6 +236,11 @@ module.exports = function Surge(options){
 		this.broadcast = function(name,message){
 			broadcast(this.room,name,message);
 		}
+	}
+
+	//Logger function
+	function logMessage(string){
+		if(debug) console.log(string);
 	}
 };
 

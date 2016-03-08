@@ -1,3 +1,8 @@
+### 1.1.3
+
+- Added istanbul coverage
+- Removed if statements for surge-joined/left when user is already un/subscribed to the same room
+
 ### 1.1.2
 
 - Changed default host
