@@ -5,9 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test": "tape test/**/*.js | tap-spec",
-    "coverage": "istanbul cover test/index.js",
+    "coverage": "./node_modules/istanbul/lib/cli.js cover test/index.js",
+    "coveralls": "/node_modules/istanbul/lib/cli.js cover test/index.js && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js",
     "watch": "watchify surge-client.js --s Surge -o ./dist/surge-client.js",
-    "build": "browserify index.js --s Surge -o ./dist/surge-client.js && browserify index.js --s Surge | uglifyjs -mc > ./dist/surge-client.min.js"
+    "build": "browserify index.js --s Surge -o ./dist/surge-client.js && browserify index.js --s Surge | uglifyjs -mc > ./dist/surge-client.min.js",
+    "deploy:patch": "npm version patch && npm publish",
+    "deploy:minor": "npm version minor && npm publish",
+    "deploy:major": "npm version major && npm publish"
   },
   "repository": {
     "type": "git",
@@ -18,6 +22,7 @@
   },
   "devDependencies": {
     "browserify": "latest",
+    "coveralls": "^2.11.8",
     "istanbul": "^0.4.2",
     "tap-spec": "^4.1.0",
     "tape": "^4.2.2",
