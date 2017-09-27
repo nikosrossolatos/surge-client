@@ -1,13 +1,13 @@
-#Surge-client
+# Surge-client
 [![Build Status](https://travis-ci.org/spideynr/surge-client.svg?branch=master)](https://travis-ci.org/spideynr/surge-client) [![Coverage Status](https://coveralls.io/repos/github/spideynr/surge-client/badge.svg?branch=master)](https://coveralls.io/github/spideynr/surge-client?branch=master)
 
 Surge is a lightweight "framework" for SockJS, providing a Socket.io-like API on top of it, adding extra features out of the box.
 
-##Inspiration
+## Inspiration
 
 I wanted to build a reliable WebSocket server that i could deploy very fast and have everything i needed in matter of minutes. Having a standalone surge server, i can require the library include my socket-server ip and im good to go. Using the excellent [pusher](https://pusher.com/) library was also a reason.
 
-##How to use
+## How to use
 
 __You dont have to setup your own surge-server__
 Surge-client connects automatically with a standalone [surge](https://github.com/spideynr/surge) server that i have already deployed. Alternatively, you can clone your own [surge-server](https://github.com/spideynr/surge) and change the ip that surge-client connects to.
@@ -41,7 +41,7 @@ Surge-client is built using browserify and includes SockJS library. Minified it 
 
 > You should not use the default surge-server for production purposes.
 
-###Node.JS (server-side usage)
+### Node.JS (server-side usage)
 
 Install the library
 
@@ -65,14 +65,14 @@ Example code
 
 There is a plan for the future to create similar libraries for Python,PHP and Ruby servers. But if you want to built it yourself, do fork it and i will happily intergrate it and reference it here!
 
-##Options 
+## Options 
 Option             | Description
 -------------------|--------------------------------------------------------------------------------------------------
 `host`             | Sets a new surge-server host
 `debug`            | When set to `true`, you will see more details about what is happening on your console. Default is `false`
 `authEndpoint`     | (Not enabled yet) Url that server will call for authorization
 
-##API
+## API
 
 When you call *new Surge()* you will get back a tiny API to interact with the socket. Calling multiple new Surge() objects will not likely work since SockJS has a limitation as to how many WebSockets it can use.
 
@@ -132,7 +132,7 @@ Event Name            | Description
 `surge-joined-room`   | Calls when you succesfully enter a room, returns the `room` as string.
 `surge-left-room`     | Calls when you succesfully leave a room, returns the `room` as string.
 
-##Features
+## Features
 
 - Its blazing fast to set something up for development purposes
 - Auto-reconnecting already enabled (also reconnects to previously connected rooms) 
@@ -143,7 +143,7 @@ Event Name            | Description
 - Check roadmap for more!
 
 
-##Build
+## Build
 For development purposes you can install [browserify](http://browserify.org/#install), [watchify](https://github.com/substack/watchify) and [uglify](https://github.com/mishoo/UglifyJS2) and use the npm task manager to build the dependancies.
 
 To build-watch everything for production purposes you can run :
@@ -157,13 +157,13 @@ You can also build the surge-client library and minify it using
 ```shell
 npm run build  
 ```
-##Test
+## Test
 
 ```shell
 npm test
 ```
 
-##Roadmap
+## Roadmap
 - Authenticating connection requests using a token/secret hmac
 - Add authentication endpoint option for Authenticating users on the socket
 - Introduce Private - Preservance Channels after authenticating users
@@ -172,8 +172,8 @@ npm test
 - Use redis to scale surge servers behind a HAProxy load balancer and provide a more production-ready library
 
 
-##Contributions
+## Contributions
 I will be maintaining this project since i will be using it in production for my apps, but if you want to help out filling the [issue tracker](https://github.com/spideynr/surge-client/issues) or helping with the code, feel free to contact me or do a pull request
 
-##Licence
+## Licence
 MIT
